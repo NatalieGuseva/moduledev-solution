@@ -51,9 +51,14 @@ public class OpenApiController : ControllerBase
                         requestBody = new
                         {
                             required = true,
-                            content = new
+                            // ИСПРАВЛЕНО: анонимный тип с полем "application_json" сериализовался
+                            // буквально как ключ "application_json" (C#-идентификаторы не могут
+                            // содержать "/"), а не как требуемый OpenAPI media type "application/json".
+                            // Клиенты, которые ищут ключ "application/json" в content, ничего не
+                            // находили. Явный Dictionary<string, object> позволяет задать ключ с "/".
+                            content = new Dictionary<string, object>
                             {
-                                application_json = new
+                                ["application/json"] = new
                                 {
                                     schema = JsonSerializer.Deserialize<JsonElement>(a.RequestSchema)
                                 }
@@ -64,9 +69,9 @@ public class OpenApiController : ControllerBase
                             _200 = new
                             {
                                 description = "Success",
-                                content = new
+                                content = new Dictionary<string, object>
                                 {
-                                    application_json = new
+                                    ["application/json"] = new
                                     {
                                         schema = JsonSerializer.Deserialize<JsonElement>(a.ResponseSchema)
                                     }
@@ -159,9 +164,12 @@ public class OpenApiController : ControllerBase
                             requestBody = new
                             {
                                 required = true,
-                                content = new
+                                // См. комментарий в GetOpenApiDocument выше — та же самая проблема
+                                // с ключом media type: должно быть "application/json", а не
+                                // "application_json".
+                                content = new Dictionary<string, object>
                                 {
-                                    application_json = new
+                                    ["application/json"] = new
                                     {
                                         schema = JsonSerializer.Deserialize<JsonElement>(actionDef.RequestSchema)
                                     }
@@ -172,9 +180,9 @@ public class OpenApiController : ControllerBase
                                 _200 = new
                                 {
                                     description = "Success",
-                                    content = new
+                                    content = new Dictionary<string, object>
                                     {
-                                        application_json = new
+                                        ["application/json"] = new
                                         {
                                             schema = JsonSerializer.Deserialize<JsonElement>(actionDef.ResponseSchema)
                                         }
@@ -208,11 +216,18 @@ public class OpenApiController : ControllerBase
         
         using var conn = await _dataSource.OpenConnectionAsync();
         using var cmd = conn.CreateCommand();
+        // ИСПРАВЛЕНО: раньше здесь был только "WHERE enabled = true" — это включало
+        // в default.json ВСЕ включённые версии одного и того же action (например,
+        // и v1, и v2, если обе enabled), хотя default.json должен описывать ровно
+        // один, действующий по умолчанию контракт на каждый module.action
+        // (не-default версии документируются отдельно через
+        // /openapi/actions/{module}/{action}/{version}.json). Добавлен фильтр
+        // "AND is_default = true".
         cmd.CommandText = @"
             SELECT module, action, version, request_schema::text, response_schema::text, 
                    idempotency_mode
             FROM course.action_catalog
-            WHERE enabled = true
+            WHERE enabled = true AND is_default = true
             ORDER BY module, action, version";
         
         using var reader = await cmd.ExecuteReaderAsync();

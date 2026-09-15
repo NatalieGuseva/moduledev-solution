@@ -56,10 +56,20 @@ public class JwtContextMiddleware
                     // FindAll("scope") находит один claim с этой строкой целиком — её нужно
                     // разбить по пробелам, иначе required_policy никогда не совпадёт ни с чем,
                     // кроме токена с ровно одним scope.
-                    var scopes = principal.FindAll("scope")
-                        .SelectMany(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                        .Distinct()
-                        .ToArray();
+                    //
+                    // ValueType здесь проверяется ровно по той же причине, что и для sub/consumer
+                    // ниже: если "scope" в payload — JSON-число/bool/объект/массив, а не строка,
+                    // раньше это молча "работало" через ToString()-представление объекта и портило
+                    // набор scope'ов вместо явного 401. Токен с scope неверного типа считается
+                    // невалидным целиком.
+                    var scopeClaims = principal.FindAll("scope").ToArray();
+                    var scopeTypesValid = scopeClaims.All(c => c.ValueType == ClaimValueTypes.String);
+                    var scopes = scopeTypesValid
+                        ? scopeClaims
+                            .SelectMany(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                            .Distinct()
+                            .ToArray()
+                        : Array.Empty<string>();
 
                     // principal.Identity?.Name смотрит на claim ClaimTypes.Name ("...claims/name"),
                     // а в токене есть только "sub" — он туда не маппится (MapInboundClaims здесь
@@ -89,11 +99,24 @@ public class JwtContextMiddleware
                         && consumerClaim.ValueType == ClaimValueTypes.String
                         && !string.IsNullOrWhiteSpace(consumer);
 
-                    if (!subjectValid || !consumerValid)
+                    // iat (issued-at) — NumericDate по RFC 7519 §2, т.е. целое число секунд
+                    // Unix-эпохи. JwtSecurityTokenHandler кладёт числовые claim'ы как
+                    // ClaimValueTypes.Integer/Integer64; если "iat" пришёл JSON-строкой,
+                    // массивом или объектом — формат подделан, и раньше это никак не
+                    // проверялось (claim просто не читался вообще, никакой типовой проверки
+                    // не было в принципе). Заодно отклоняем токен, "выпущенный в будущем" —
+                    // валидный iat так появиться не может даже с учётом небольшого skew.
+                    var iatClaim = principal.FindFirst("iat");
+                    var iatValid = iatClaim == null
+                        || ((iatClaim.ValueType == ClaimValueTypes.Integer64 || iatClaim.ValueType == ClaimValueTypes.Integer)
+                            && long.TryParse(iatClaim.Value, out var iatSeconds)
+                            && DateTimeOffset.FromUnixTimeSeconds(iatSeconds) <= DateTimeOffset.UtcNow.AddMinutes(1));
+
+                    if (!subjectValid || !consumerValid || !scopeTypesValid || !iatValid)
                     {
                         _logger.LogDebug(
-                            "Missing or invalid required claim(s): sub={SubjectValid}, consumer={ConsumerValid}",
-                            subjectValid, consumerValid);
+                            "Missing or invalid required claim(s): sub={SubjectValid}, consumer={ConsumerValid}, scope={ScopeTypesValid}, iat={IatValid}",
+                            subjectValid, consumerValid, scopeTypesValid, iatValid);
                     }
                     else
                     {
