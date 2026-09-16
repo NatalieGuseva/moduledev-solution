@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="Dapper" Version="2.1.35" />
+    <!-- Поднимает реальный postgres:17-alpine в Docker для каждого тестового
+         прогона — тестируем настоящие GRANT/REVOKE/CHECK/триггеры, а не мок
+         прав доступа, которые как раз и были источником прод-инцидента
+         (week-1-public-report.json: 503 на payment.request, 500 на
+         opencheck.probe — оба не воспроизводились бы никаким мок-тестом). -->
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.1.0" />
+  </ItemGroup>
+
+  <!-- Тесты применяют ровно те же .sql-файлы, что и "cli migration apply" в
+       проде — не копию правил, а сам источник истины. Если кто-то сломает
+       001_initial.sql/005.../008..., тест увидит ту же самую поломку. -->
+  <ItemGroup>
+    <None Include="..\Api\Migrations\ChecksummedMigrations\*.sql">
+      <Link>Migrations\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\autocheck\fixtures\migrations\*.sql">
+      <Link>Migrations\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
