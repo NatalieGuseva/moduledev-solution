@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["processId"],
+  "properties": {
+    "processId": { "type": "string", "format": "uuid" }
+  }
+}

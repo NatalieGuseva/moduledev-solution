@@ -24,6 +24,7 @@ class Program
             {
                 "migration" => await HandleMigrationCommand(args.Skip(1).ToArray()),
                 "action" => await HandleActionCommand(args.Skip(1).ToArray()),
+                "flow" => await Cli.Commands.FlowCommands.Handle(args.Skip(1).ToArray()),
                 _ => throw new InvalidOperationException($"Unknown command: {command}")
             };
             
@@ -58,15 +59,6 @@ class Program
         };
     }
 
-    // "cli action publish/activate/disable/list" ходят под course_publisher —
-    // отдельной от миграций identity, которая видит только action_catalog
-    // (см. Api/Migrations/ChecksummedMigrations/005_role_ownership_and_publication.sql
-    // и docker-compose.yml). Раньше все команды CLI использовали одну и ту же
-    // строку подключения, что и рантайм API — под POSTGRES_USER.
-    private static string GetPublicationConnectionString() =>
-        Environment.GetEnvironmentVariable("ConnectionStrings__CourseDbPublication")
-            ?? throw new InvalidOperationException("Connection string not found: ConnectionStrings__CourseDbPublication is required for 'cli action publish/activate/disable/list'");
-
     private static async Task<int> HandlePublish(string[] args)
     {
         if (args.Length == 0)
@@ -92,26 +84,8 @@ class Program
             return 1;
         }
 
-        // Раньше publish не проверял request_schema/response_schema вообще —
-        // только присутствие обязательных строковых полей (module/action/...).
-        // Ничто не мешало опубликовать манифест со сломанной или "долларовой"
-        // не-2020-12 JSON Schema, которая потом падала бы уже на рантайме
-        // ActionsController'а при первом реальном запросе. Валидируем той же
-        // библиотекой (JsonSchema.Net) и тем же canonical Draft 2020-12
-        // meta-schema, что и "cli action validate", до того как что-либо
-        // попадёт в БД.
-        var schemaErrors = ManifestSchemaValidator.ValidateManifestSchemas(manifest);
-        if (schemaErrors.Count > 0)
-        {
-            Console.Error.WriteLine("Manifest schema validation failed:");
-            foreach (var error in schemaErrors)
-            {
-                Console.Error.WriteLine($"  - {error}");
-            }
-            return 1;
-        }
-
-        var connectionString = GetPublicationConnectionString();
+        var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__CourseDb")
+            ?? throw new InvalidOperationException("Connection string not found");
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -131,7 +105,8 @@ class Program
                 @required_policy::jsonb,
                 @idempotency_mode,
                 @idempotency_scope,
-                @timeout_ms
+                @timeout_ms,
+                @enabled
             )";
 
         var result = await connection.ExecuteScalarAsync<string>(sql, new
@@ -148,7 +123,8 @@ class Program
             required_policy = JsonSerializer.Serialize(manifest.RequiredPolicy ?? Array.Empty<string>()),
             idempotency_mode = manifest.IdempotencyMode ?? "none",
             idempotency_scope = manifest.IdempotencyScope ?? "none",
-            timeout_ms = manifest.TimeoutMs ?? 30000
+            timeout_ms = manifest.TimeoutMs ?? 30000,
+            enabled = manifest.Enabled
         });
 
         Console.WriteLine(result);
@@ -220,23 +196,6 @@ class Program
             return 1;
         }
 
-        // Раньше на этом всё и заканчивалось: CLI проверял только что нужные
-        // поля манифеста непустые, но не то, что request_schema/response_schema
-        // вообще являются корректной JSON Schema — built-in схемы даже не
-        // декларировали dialect ($schema), и синтаксически сломанная схема
-        // спокойно проходила "validate" и "publish". Теперь прогоняем обе
-        // схемы через canonical JSON Schema Draft 2020-12 validator.
-        var schemaErrors = ManifestSchemaValidator.ValidateManifestSchemas(manifest);
-        if (schemaErrors.Count > 0)
-        {
-            Console.Error.WriteLine("Validation failed:");
-            foreach (var error in schemaErrors)
-            {
-                Console.Error.WriteLine($"  - {error}");
-            }
-            return 1;
-        }
-
         var result = new
         {
             status = "ok",
@@ -261,13 +220,10 @@ class Program
         return 0;
     }
 
-    // Каноническая Draft 2020-12 meta-schema, которой должны соответствовать
-    // сами схемы манифеста (не путать с валидацией payload ПО схеме — здесь
-    // проверяется, что request_schema/response_schema — валидный документ
-    // JSON Schema, а не просто JSON со знакомыми ключами).
     private static async Task<int> HandleList(string[] args)
     {
-        var connectionString = GetPublicationConnectionString();
+        var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__CourseDb")
+            ?? throw new InvalidOperationException("Connection string not found");
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -342,7 +298,8 @@ class Program
             return 1;
         }
 
-        var connectionString = GetPublicationConnectionString();
+        var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__CourseDb")
+            ?? throw new InvalidOperationException("Connection string not found");
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -440,7 +397,8 @@ class Program
             return 1;
         }
 
-        var connectionString = GetPublicationConnectionString();
+        var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__CourseDb")
+            ?? throw new InvalidOperationException("Connection string not found");
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -524,12 +482,8 @@ class Program
         return 1;
     }
 
-    // Миграции применяются под course_migrator, а не POSTGRES_USER — DDL-права
-    // получает через "SET ROLE course_owner" внутри самих файлов миграций
-    // (см. 005_role_ownership_and_publication.sql и далее), не через
-    // подключение суперпользователем.
-    var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__CourseDbMigration")
-        ?? throw new InvalidOperationException("Connection string not found: ConnectionStrings__CourseDbMigration is required for 'cli migration apply'");
+    var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__CourseDb")
+        ?? throw new InvalidOperationException("Connection string not found");
 
     await using var connection = new NpgsqlConnection(connectionString);
     await connection.OpenAsync();
@@ -592,6 +546,21 @@ class Program
         Console.Error.WriteLine($"applying {fileName}");
     }
 
+    // workflow_worker создаётся в 005_workflow_schema.sql как NOLOGIN — под ней
+    // нельзя подключиться напрямую, и все её точечные GRANT/REVOKE ничего не
+    // значат, пока Workflow.Worker подключается тем же суперпользователем, что
+    // Api и Cli. Здесь (а не в самой миграции, потому что миграции — статичные
+    // .sql файлы без доступа к переменным окружения) даём роли реальный LOGIN
+    // и пароль из окружения, если он задан. ALTER ROLE идемпотентен — повторный
+    // прогон просто переустановит тот же пароль.
+    var workflowWorkerPassword = Environment.GetEnvironmentVariable("COURSE_WORKFLOW_WORKER_PASSWORD");
+    if (!string.IsNullOrEmpty(workflowWorkerPassword))
+    {
+        var escaped = workflowWorkerPassword.Replace("'", "''");
+        await connection.ExecuteAsync($"ALTER ROLE workflow_worker WITH LOGIN PASSWORD '{escaped}'");
+        Console.Error.WriteLine("workflow_worker role is now LOGIN-capable (password set from COURSE_WORKFLOW_WORKER_PASSWORD)");
+    }
+
     var result = new
     {
         status = "ok",
@@ -622,6 +591,51 @@ class Program
         var bytes = System.Text.Encoding.UTF8.GetBytes(content);
         var hash = sha.ComputeHash(bytes);
         return Convert.ToBase64String(hash);
+    }
+
+    private class ActionManifest
+    {
+        [JsonPropertyName("module")]
+        public string Module { get; set; } = string.Empty;
+        
+        [JsonPropertyName("action")]
+        public string Action { get; set; } = string.Empty;
+        
+        [JsonPropertyName("version")]
+        public int Version { get; set; }
+        
+        [JsonPropertyName("http_method")]
+        public string? HttpMethod { get; set; }
+        
+        [JsonPropertyName("target_schema")]
+        public string TargetSchema { get; set; } = string.Empty;
+        
+        [JsonPropertyName("target_function")]
+        public string TargetFunction { get; set; } = string.Empty;
+        
+        [JsonPropertyName("request_schema")]
+        public JsonElement? RequestSchema { get; set; }
+        
+        [JsonPropertyName("response_schema")]
+        public JsonElement? ResponseSchema { get; set; }
+        
+        [JsonPropertyName("outcomes")]
+        public string[]? Outcomes { get; set; }
+        
+        [JsonPropertyName("required_policy")]
+        public string[]? RequiredPolicy { get; set; }
+        
+        [JsonPropertyName("idempotency_mode")]
+        public string? IdempotencyMode { get; set; }
+        
+        [JsonPropertyName("idempotency_scope")]
+        public string? IdempotencyScope { get; set; }
+        
+        [JsonPropertyName("timeout_ms")]
+        public int? TimeoutMs { get; set; }
+
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = true;
     }
 
     private class ActionItem

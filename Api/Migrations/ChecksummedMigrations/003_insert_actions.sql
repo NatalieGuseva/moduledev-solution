@@ -2,7 +2,7 @@
 -- Миграция 003: Вставка встроенных actions
 -- ============================================================
 
--- payment.request version 1
+-- 1. payment.request version 1
 INSERT INTO course.action_catalog (
     module, action, version, http_method, target_schema, target_function,
     request_schema, response_schema, outcomes, required_policy,
@@ -49,7 +49,7 @@ ON CONFLICT (module, action, version) DO UPDATE SET
     enabled = EXCLUDED.enabled,
     is_default = EXCLUDED.is_default;
 
--- operation.get version 1
+-- 2. operation.get version 1
 INSERT INTO course.action_catalog (
     module, action, version, http_method, target_schema, target_function,
     request_schema, response_schema, outcomes, required_policy,
@@ -94,3 +94,46 @@ ON CONFLICT (module, action, version) DO UPDATE SET
     enabled = EXCLUDED.enabled,
     is_default = EXCLUDED.is_default;
 
+-- 3. workflow.get version 1
+INSERT INTO course.action_catalog (
+    module, action, version, http_method, target_schema, target_function,
+    request_schema, response_schema, outcomes, required_policy,
+    idempotency_mode, idempotency_scope, timeout_ms, enabled, is_default
+) VALUES (
+    'workflow', 'get', 1, 'POST', 'workflow', 'get_process',
+    '{
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["processId"],
+      "properties": {
+        "processId": { "type": "string", "format": "uuid" }
+      }
+    }'::jsonb,
+    '{
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["processId", "flowName", "flowVersion", "state", "currentStepKey"],
+      "properties": {
+        "processId": { "type": "string", "format": "uuid" },
+        "flowName": { "type": "string" },
+        "flowVersion": { "type": "integer" },
+        "state": { "type": "string" },
+        "currentStepKey": { "type": "string" }
+      }
+    }'::jsonb,
+    '["FOUND"]'::jsonb,
+    '["workflow:read"]'::jsonb,
+    'none', 'none', 5000, true, false
+)
+ON CONFLICT (module, action, version) DO UPDATE SET
+    target_schema = EXCLUDED.target_schema,
+    target_function = EXCLUDED.target_function,
+    request_schema = EXCLUDED.request_schema,
+    response_schema = EXCLUDED.response_schema,
+    outcomes = EXCLUDED.outcomes,
+    required_policy = EXCLUDED.required_policy,
+    idempotency_mode = EXCLUDED.idempotency_mode,
+    idempotency_scope = EXCLUDED.idempotency_scope,
+    timeout_ms = EXCLUDED.timeout_ms,
+    enabled = EXCLUDED.enabled,
+    is_default = EXCLUDED.is_default;

@@ -314,7 +314,7 @@ BEGIN
         );
     END IF;
 
-    -- amount обязан быть JSON-строкой, а не числом (см. contracts/course-1/payment-request.payload.schema.json)
+    -- amount обязан быть JSON-строкой, а не числом
     IF jsonb_typeof(p_payload->'amount') != 'string' THEN
         RETURN jsonb_build_object(
             'status', 'error',
@@ -324,7 +324,7 @@ BEGIN
     END IF;
 
     BEGIN
-        -- Точный формат из контракта: 0.01..9999999999999999.99, максимум 2 знака после точки, без ведущих нулей
+        -- Точный формат из контракта
         IF p_payload->>'amount' !~ '^(?:0\.0[1-9]|0\.[1-9][0-9]?|[1-9][0-9]{0,15}(?:\.[0-9]{1,2})?)$' THEN
             RETURN jsonb_build_object(
                 'status', 'error',
@@ -508,7 +508,7 @@ BEGIN
 END;
 $$;
 
--- 6. Функция для публикации action (идемпотентная)
+-- 6. Функция для публикации action (идемпотентная) - УПРОЩЕНА
 CREATE OR REPLACE FUNCTION course.publish_action(
     p_module TEXT,
     p_action TEXT,
@@ -522,7 +522,8 @@ CREATE OR REPLACE FUNCTION course.publish_action(
     p_required_policy JSONB,
     p_idempotency_mode TEXT,
     p_idempotency_scope TEXT,
-    p_timeout_ms INTEGER
+    p_timeout_ms INTEGER,
+    p_enabled BOOLEAN DEFAULT TRUE
 ) RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -531,25 +532,44 @@ AS $$
 DECLARE
     v_existing course.action_catalog%ROWTYPE;
     v_is_first_version BOOLEAN;
+    v_existing_json JSONB;
+    v_new_json JSONB;
 BEGIN
     SELECT * INTO v_existing
     FROM course.action_catalog
     WHERE module = p_module AND action = p_action AND version = p_version;
 
     IF FOUND THEN
-        -- Каталог immutable: повторная публикация с ТЕМ ЖЕ содержимым — безопасный
-        -- no-op (идемпотентность), а с ИЗМЕНЁННЫМ содержимым — конфликт.
-        IF v_existing.http_method       IS DISTINCT FROM p_http_method
-        OR v_existing.target_schema     IS DISTINCT FROM p_target_schema
-        OR v_existing.target_function   IS DISTINCT FROM p_target_function
-        OR v_existing.request_schema    IS DISTINCT FROM p_request_schema
-        OR v_existing.response_schema   IS DISTINCT FROM p_response_schema
-        OR v_existing.outcomes          IS DISTINCT FROM p_outcomes
-        OR v_existing.required_policy   IS DISTINCT FROM p_required_policy
-        OR v_existing.idempotency_mode  IS DISTINCT FROM p_idempotency_mode
-        OR v_existing.idempotency_scope IS DISTINCT FROM p_idempotency_scope
-        OR v_existing.timeout_ms        IS DISTINCT FROM p_timeout_ms
-        THEN
+        -- ✅ Сравниваем JSON-представления всех полей
+        v_existing_json := jsonb_build_object(
+            'http_method', v_existing.http_method,
+            'target_schema', v_existing.target_schema,
+            'target_function', v_existing.target_function,
+            'request_schema', v_existing.request_schema,
+            'response_schema', v_existing.response_schema,
+            'outcomes', v_existing.outcomes,
+            'required_policy', v_existing.required_policy,
+            'idempotency_mode', v_existing.idempotency_mode,
+            'idempotency_scope', v_existing.idempotency_scope,
+            'timeout_ms', v_existing.timeout_ms,
+            'enabled', v_existing.enabled
+        );
+
+        v_new_json := jsonb_build_object(
+            'http_method', p_http_method,
+            'target_schema', p_target_schema,
+            'target_function', p_target_function,
+            'request_schema', p_request_schema,
+            'response_schema', p_response_schema,
+            'outcomes', p_outcomes,
+            'required_policy', p_required_policy,
+            'idempotency_mode', p_idempotency_mode,
+            'idempotency_scope', p_idempotency_scope,
+            'timeout_ms', p_timeout_ms,
+            'enabled', p_enabled
+        );
+
+        IF v_existing_json <> v_new_json THEN
             RETURN jsonb_build_object(
                 'status', 'error',
                 'code', 'manifest.conflict',
@@ -571,6 +591,7 @@ BEGIN
         );
     END IF;
 
+    -- Определяем, является ли эта версия первой для данного action
     SELECT NOT EXISTS (
         SELECT 1 FROM course.action_catalog
         WHERE module = p_module AND action = p_action
@@ -588,7 +609,7 @@ BEGIN
         p_request_schema, p_response_schema, p_outcomes,
         p_required_policy, p_idempotency_mode, p_idempotency_scope,
         p_timeout_ms,
-        TRUE,
+        p_enabled,
         v_is_first_version
     );
 
@@ -669,7 +690,6 @@ BEGIN
             )
         );
     ELSIF v_mode = 'invalid_result' THEN
-        
         RETURN jsonb_build_object(
             'status', 'ok',
             'outcome', 'APPLIED',

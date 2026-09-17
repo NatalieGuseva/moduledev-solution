@@ -1,19 +1,13 @@
 services:
   postgres:
     image: postgres:17-alpine
+    container_name: moduldev-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-course}
-      # Пароли identity-ролей, которые создаёт postgres-init/00-bootstrap-roles.sh
-      # (выполняется один раз при первой инициализации volume). Дефолты — только
-      # для локальной разработки и автопроверки, как и POSTGRES_PASSWORD выше.
-      COURSE_MIGRATOR_PASSWORD: ${COURSE_MIGRATOR_PASSWORD:-course_migrator_dev_password}
-      COURSE_PUBLISHER_PASSWORD: ${COURSE_PUBLISHER_PASSWORD:-course_publisher_dev_password}
-      COURSE_RUNTIME_PASSWORD: ${COURSE_RUNTIME_PASSWORD:-course_runtime_dev_password}
     volumes:
       - course_pgdata:/var/lib/postgresql/data
-      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-course}"]
       interval: 10s
@@ -28,17 +22,14 @@ services:
     build:
       context: .
       dockerfile: Cli/Dockerfile
+    container_name: moduldev-cli
     command: ["migration", "apply", "/app/Migrations/ChecksummedMigrations"]
     restart: "no"
-    volumes:
-      - ./Api/Migrations:/app/Migrations
+    
     environment:
-      # "cli migration apply" — только под course_migrator (DDL-права
-      # получает через SET ROLE course_owner внутри самих файлов миграций).
-      - ConnectionStrings__CourseDbMigration=Host=postgres;Database=${POSTGRES_DB:-course};Username=course_migrator;Password=${COURSE_MIGRATOR_PASSWORD:-course_migrator_dev_password}
-      # "cli action publish/activate/disable/list" — только под course_publisher,
-      # который видит исключительно course.action_catalog.
-      - ConnectionStrings__CourseDbPublication=Host=postgres;Database=${POSTGRES_DB:-course};Username=course_publisher;Password=${COURSE_PUBLISHER_PASSWORD:-course_publisher_dev_password}
+      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}
+      - COURSE_JWT_SIGNING_KEY=${COURSE_JWT_SIGNING_KEY}
+      - COURSE_WORKFLOW_WORKER_PASSWORD=${COURSE_WORKFLOW_WORKER_PASSWORD:-workflow_worker_pw}
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,6 +42,7 @@ services:
     build:
       context: .
       dockerfile: Api/Dockerfile
+    container_name: moduldev-api
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
       interval: 10s
@@ -60,11 +52,10 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://0.0.0.0:8080
-      - COURSE_JWT_ISSUER=${COURSE_JWT_ISSUER:-moduledev-course}
-      - COURSE_JWT_AUDIENCE=${COURSE_JWT_AUDIENCE:-moduledev-api}
-      - COURSE_JWT_SIGNING_KEY=${COURSE_JWT_SIGNING_KEY:-dev-only-signing-key-please-override-32bytes-min}
-      # Боевой трафик — только под course_runtime, никогда под POSTGRES_USER.
-      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=course_runtime;Password=${COURSE_RUNTIME_PASSWORD:-course_runtime_dev_password}
+      - COURSE_JWT_ISSUER=${COURSE_JWT_ISSUER}
+      - COURSE_JWT_AUDIENCE=${COURSE_JWT_AUDIENCE}
+      - COURSE_JWT_SIGNING_KEY=${COURSE_JWT_SIGNING_KEY}
+      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}
     expose:
       - "8080"
     depends_on:
@@ -80,6 +71,7 @@ services:
     build:
       context: .
       dockerfile: Gateway/Dockerfile
+    container_name: moduldev-gateway
     ports:
       - "8080:8080"
     environment:
@@ -89,6 +81,46 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    networks:
+      - moduldev-network
+    restart: unless-stopped
+
+  worker-a:
+    image: moduledev-week2-worker:latest
+    build:
+      context: .
+      dockerfile: Workflow.Worker/Dockerfile
+    container_name: moduldev-worker-a
+    environment:
+      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=workflow_worker;Password=${COURSE_WORKFLOW_WORKER_PASSWORD:-workflow_worker_pw}
+      - COURSE_INSTANCE_ID=worker-a
+      - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-0}
+      - COURSE_FAILPOINT=${COURSE_FAILPOINT:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cli:
+        condition: service_completed_successfully
+    networks:
+      - moduldev-network
+    restart: unless-stopped
+
+  worker-b:
+    image: moduledev-week2-worker:latest
+    build:
+      context: .
+      dockerfile: Workflow.Worker/Dockerfile
+    container_name: moduldev-worker-b
+    environment:
+      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=workflow_worker;Password=${COURSE_WORKFLOW_WORKER_PASSWORD:-workflow_worker_pw}
+      - COURSE_INSTANCE_ID=worker-b
+      - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-0}
+      - COURSE_FAILPOINT=${COURSE_FAILPOINT:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cli:
+        condition: service_completed_successfully
     networks:
       - moduldev-network
     restart: unless-stopped

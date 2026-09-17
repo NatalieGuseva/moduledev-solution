@@ -1,4 +1,5 @@
 using Api.Middleware;
+using Common.ActionExecution;
 using Npgsql;
 
 // Dapper по умолчанию мапит колонки на свойства только по точному совпадению имени.
@@ -14,6 +15,10 @@ builder.Services.AddControllers();
 builder.Services.AddScoped<CorrelationAndErrorMiddleware>();
 builder.Services.AddScoped<JwtContextMiddleware>();
 builder.Services.AddScoped<JsonSchemaValidationMiddleware>();
+
+// Общий исполнитель экшена (Common.ActionExecution) — тот же класс будет использовать
+// Workflow.Worker на неделе 2, поэтому он живёт в Common, а не в Api.
+builder.Services.AddSingleton<ActionExecutor>();
 
 var connectionString = builder.Configuration.GetConnectionString("CourseDb") 
     ?? Environment.GetEnvironmentVariable("ConnectionStrings__CourseDb")

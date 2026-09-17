@@ -1,0 +1,20 @@
+{
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["process", "steps", "jobs", "attempts"],
+      "properties": {
+        "process": { "type": "object" },
+        "steps": { "type": "array" },
+        "jobs": { "type": "array" },
+        "attempts": { "type": "array" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    }
+  ]
+}

@@ -22,6 +22,25 @@ public record TrustedContext
 
     [JsonPropertyName("deadline")]
     public DateTimeOffset Deadline { get; init; }
+
+    // Заполняются только Workflow.Worker при вызове action изнутри workflow —
+    // для обычных HTTP-вызовов через Api остаются null и просто не попадают
+    // в сериализованный JSON. Обязательны по 04_assignment.md: "Worker создаёт
+    // trusted context principal workflow-worker, добавляет processId, jobId,
+    // executionId, attemptId". executionId используется целевыми функциями
+    // как ключ идемпотентности предметного эффекта (см. probe-fixture недели 2:
+    // p_context ->> 'executionId' используется как PRIMARY KEY).
+    [JsonPropertyName("processId")]
+    public Guid? ProcessId { get; init; }
+
+    [JsonPropertyName("jobId")]
+    public Guid? JobId { get; init; }
+
+    [JsonPropertyName("executionId")]
+    public Guid? ExecutionId { get; init; }
+
+    [JsonPropertyName("attemptId")]
+    public Guid? AttemptId { get; init; }
 }
 
 public record Meta

@@ -1,33 +1,32 @@
 {
   "contract_version": "course-1",
-  "module": "opencheck",
-  "action": "probe",
+  "module": "training",
+  "action": "canary",
   "version": 1,
   "http_method": "POST",
-  "target_schema": "opencheck",
-  "target_function": "probe_v1",
+  "target_schema": "training",
+  "target_function": "canary_v1",
   "request_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
-    "additionalProperties": false,
-    "required": ["mode", "value"],
+    "required": ["value"],
     "properties": {
-      "mode": {
-        "enum": ["ok", "error", "unknown_outcome", "invalid_result"]
-      },
-      "value": {"type": "string", "minLength": 1, "maxLength": 128}
-    }
+      "value": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
   },
   "response_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
-    "additionalProperties": false,
-    "required": ["stored", "revision", "principal"],
+    "required": ["stored"],
     "properties": {
-      "stored": {"type": "boolean"},
-      "revision": {"const": 1},
-      "principal": {"type": "string"}
-    }
+      "stored": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
   },
   "outcomes": ["APPLIED"],
   "required_policy": ["workflow:execute"],

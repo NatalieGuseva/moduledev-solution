@@ -9,14 +9,10 @@
 
   <ItemGroup>
   <!-- Dapper для работы с PostgreSQL -->
-    <PackageReference Include="Dapper" Version="2.1.35" />
+    <PackageReference Include="Dapper" Version="2.1.66" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
-   
-    <!-- Тот же canonical JSON Schema Draft 2020-12 валидатор, что уже
-         используется в Api (ActionsController), чтобы "cli action
-         validate/publish" проверял манифест тем же движком, что и рантайм,
-         а не только присутствием обязательных полей. -->
-    <PackageReference Include="JsonSchema.Net" Version="7.3.3" />
+    <PackageReference Include="System.Text.Json" Version="10.0.0" />
+    <PackageReference Include="YamlDotNet" Version="16.2.1" />
   </ItemGroup>
 
   <ItemGroup>
