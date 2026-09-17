@@ -75,7 +75,7 @@ public class DbInvariantsRegressionTests : IAsyncLifetime
     public async Task Operations_RejectsNonPositiveAmount(string amount)
     {
         var ex = await Assert.ThrowsAsync<PostgresException>(() =>
-            _connection.ExecuteScalarAsync<Guid?>(InsertOperationSql, NewOperationParams(amount: decimal.Parse(amount))));
+            _connection.ExecuteScalarAsync<Guid?>(InsertOperationSql, NewOperationParams(amount: decimal.Parse(amount, System.Globalization.CultureInfo.InvariantCulture))));
 
         Assert.Equal("23514", ex.SqlState);
         Assert.Contains("ck_operations_amount_positive", ex.ConstraintName);
