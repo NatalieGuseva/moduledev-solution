@@ -32,7 +32,7 @@
 
 ### Запуск
 
-**Требования:** Docker Desktop с Compose v2.20+ (нужна поддержка `service_completed_successfully`).
+**Требования:** Docker Desktop с Compose v2.20+ (нужна поддержка `service_completed_successfully`). Команда `docker compose` одинакова везде — PowerShell, WSL, Git Bash, macOS, Linux.
 
 ```bash
 docker compose up -d --build
@@ -42,16 +42,27 @@ docker compose up -d --build
 
 Проверка доступности:
 
+**PowerShell (Windows):**
+
+```powershell
+Invoke-WebRequest -Uri http://localhost:8080/health/live
+Invoke-WebRequest -Uri http://localhost:8080/health/ready
+```
+
+**bash (WSL / Git Bash / Linux / macOS):**
+
 ```bash
-curl http://localhost:8080/health/live
+curl -i http://localhost:8080/health/live
 curl http://localhost:8080/health/ready
 ```
 
+> В PowerShell `curl` и `wget` — это встроенные алиасы на `Invoke-WebRequest`, а не настоящий curl, и `-i`/пайпы к `head` там не работают так же, как в bash. Если хочется именно curl-синтаксиса на Windows — используйте `curl.exe` (он есть в Windows 10/11 из коробки) вместо `curl`.
+
 #### Переопределение конфигурации (опционально)
 
-Значения по умолчанию подходят для локального запуска и автопроверки "как есть". Если нужны свои — создайте `.env` в корне проекта (файл не коммитится в Git):
+Значения по умолчанию подходят для локального запуска и автопроверки "как есть". Если нужны свои — создайте `.env` в корне проекта (файл не коммитится в Git) со следующим содержимым:
 
-```bash
+```
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=your_password_here
 POSTGRES_DB=course
@@ -61,6 +72,40 @@ COURSE_JWT_SIGNING_KEY=your_signing_key_here_at_least_32_chars
 COURSE_MIGRATOR_PASSWORD=your_migrator_password_here
 COURSE_PUBLISHER_PASSWORD=your_publisher_password_here
 COURSE_RUNTIME_PASSWORD=your_runtime_password_here
+```
+
+Создать файл с этим содержимым:
+
+**PowerShell:**
+
+```powershell
+@'
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_password_here
+POSTGRES_DB=course
+COURSE_JWT_ISSUER=moduledev-course
+COURSE_JWT_AUDIENCE=moduledev-api
+COURSE_JWT_SIGNING_KEY=your_signing_key_here_at_least_32_chars
+COURSE_MIGRATOR_PASSWORD=your_migrator_password_here
+COURSE_PUBLISHER_PASSWORD=your_publisher_password_here
+COURSE_RUNTIME_PASSWORD=your_runtime_password_here
+'@ | Set-Content -Encoding utf8 .env
+```
+
+**bash (WSL / Git Bash / Linux / macOS):**
+
+```bash
+cat > .env << 'EOF'
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_password_here
+POSTGRES_DB=course
+COURSE_JWT_ISSUER=moduledev-course
+COURSE_JWT_AUDIENCE=moduledev-api
+COURSE_JWT_SIGNING_KEY=your_signing_key_here_at_least_32_chars
+COURSE_MIGRATOR_PASSWORD=your_migrator_password_here
+COURSE_PUBLISHER_PASSWORD=your_publisher_password_here
+COURSE_RUNTIME_PASSWORD=your_runtime_password_here
+EOF
 ```
 
 Проверка курса подставляет собственный `COURSE_JWT_SIGNING_KEY` через Compose override — значение из `.env` для неё не используется.
@@ -89,7 +134,7 @@ COURSE_RUNTIME_PASSWORD=your_runtime_password_here
 SQL-миграции лежат в `Api/Migrations/ChecksummedMigrations/` и применяются сервисом `cli` под ролью `course_migrator`:
 
 - **Автоматически** — при каждом `docker compose up` (в том числе `--force-recreate`), до старта `api`.
-- **Вручную**, при необходимости повторного прогона на уже поднятом стеке:
+- **Вручную**, при необходимости повторного прогона на уже поднятом стеке (команда одинакова в PowerShell и bash):
 
 ```bash
 docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigrations
@@ -103,14 +148,25 @@ docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigration
 
 ```bash
 docker compose down -v
+```
+
+`check.sh` — bash-скрипт, в нативном PowerShell не выполнится. Запускайте его из **WSL** или **Git Bash**:
+
+```bash
 ./check.sh
+```
+
+Если проверяете строго из PowerShell и WSL установлен — можно вызвать WSL прямо оттуда, из корня проекта:
+
+```powershell
+wsl ./check.sh
 ```
 
 Результат записывается в `week-1-public-report.json`.
 
 #### Собственные regression tests
 
-Независимо от `check.sh` — два `dotnet test` проекта, оба запускаются из корня решения:
+Независимо от `check.sh` — два `dotnet test` проекта, оба запускаются из корня решения одной и той же командой что в PowerShell, что в WSL/bash (`dotnet` — кроссплатформенный):
 
 ```bash
 dotnet test Cli.Tests/Cli.Tests.csproj    # unit-тесты, без Docker и БД (~3 сек)
@@ -130,6 +186,18 @@ docker compose logs postgres
 
 **Health-check:**
 
+PowerShell:
+
+```powershell
+Invoke-WebRequest -Uri http://localhost:8080/health/live
+# Ожидается: пустое тело, HTTP 200
+
+Invoke-WebRequest -Uri http://localhost:8080/health/ready
+# Ожидается: {"status":"ready"}
+```
+
+bash (WSL / Git Bash):
+
 ```bash
 curl -i http://localhost:8080/health/live
 # Ожидается: пустое тело, HTTP 200
@@ -140,19 +208,54 @@ curl http://localhost:8080/health/ready
 
 **OpenAPI:**
 
+PowerShell:
+
+```powershell
+(Invoke-WebRequest -Uri http://localhost:8080/openapi/default.json).Content | ConvertFrom-Json | ConvertTo-Json -Depth 10
+Invoke-WebRequest -Uri http://localhost:8080/openapi/actions/payment/request/1.json
+```
+
+bash (WSL / Git Bash):
+
 ```bash
 curl http://localhost:8080/openapi/default.json | head -50
 curl http://localhost:8080/openapi/actions/payment/request/1.json
 ```
 
-**Проверить, что миграции применились:**
+> В PowerShell нет `head` — это Linux-утилита. Родной аналог для обрезки построчного вывода: `... | Select-Object -First 50`.
+
+**Проверить, что миграции применились** (одинаково для PowerShell и bash):
 
 ```bash
 docker compose exec postgres psql -U postgres -d course -c "\dt course.*"
 docker compose exec postgres psql -U postgres -d course -c "\df opencheck.*"
 ```
 
-**Тестовый вызов action напрямую в PostgreSQL** (в обход HTTP — удобно, когда нужно исключить gateway/api из диагностики):
+**Тестовый вызов action напрямую в PostgreSQL** (в обход HTTP — удобно, когда нужно исключить gateway/api из диагностики). PowerShell при передаче сложных строк с вложенными кавычками нативным exe (`docker.exe`) может терять `"` внутри аргументов — поэтому на Windows надёжнее не собирать команду одной строкой, а положить SQL в файл и подать через stdin:
+
+PowerShell (файл + stdin — надёжный вариант):
+
+```powershell
+@'
+SELECT api.invoke(
+  'payment', 'request', 1,
+  '{"principal":"test","consumer":"test","scopes":["payment:write"],"correlationId":"00000000-0000-0000-0000-000000000001","requestId":"test-req-1","deadline":"2030-01-01T00:00:00Z"}'::jsonb,
+  '{"operationKind":"PAYMENT_EXECUTION","amount":"100.00","currency":"RUB"}'::jsonb
+);
+'@ | Set-Content -Encoding utf8 invoke-test.sql
+
+Get-Content invoke-test.sql -Raw | docker compose exec -T postgres psql -U postgres -d course
+```
+
+`@'...'@` — literal here-string (без интерполяции), поэтому одинарные кавычки SQL внутри пишутся как есть, без удвоения. `-T` у `exec` отключает псевдо-TTY — обязательно для передачи через pipe.
+
+Однострочный вариант для PowerShell (через stop-parsing token `--%`, если файл заводить не хочется):
+
+```powershell
+docker --% compose exec postgres psql -U postgres -d course -c "SELECT api.invoke('payment', 'request', 1, '{\"principal\":\"test\",\"consumer\":\"test\",\"scopes\":[\"payment:write\"],\"correlationId\":\"00000000-0000-0000-0000-000000000001\",\"requestId\":\"test-req-1\",\"deadline\":\"2030-01-01T00:00:00Z\"}'::jsonb, '{\"operationKind\":\"PAYMENT_EXECUTION\",\"amount\":\"100.00\",\"currency\":\"RUB\"}'::jsonb);"
+```
+
+bash (WSL / Git Bash):
 
 ```bash
 docker compose exec postgres psql -U postgres -d course -c "
@@ -164,7 +267,10 @@ SELECT api.invoke(
 "
 ```
 
-Подключение к БД для Windows (Git Bash), интерактивная сессия:
+Подключение к БД — интерактивная сессия:
+
+- **WSL / нативный PowerShell:** `docker compose exec postgres psql -U postgres -d course` — работает напрямую, `winpty` не нужен.
+- **Git Bash (MinTTY):** нужен `winpty`, иначе интерактивный `psql` зависает без вывода:
 
 ```bash
 winpty docker compose exec postgres psql -U postgres -d course
