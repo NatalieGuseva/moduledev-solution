@@ -13,7 +13,7 @@
 - **gateway** (ASP.NET Core, YARP) — единственная точка входа снаружи, публикует host-порт `8080`. Проксирует запросы во внутренний `api` по Compose DNS (`http://api:8080`), не содержит предметной логики и не имеет доступа к PostgreSQL.
 - **api** — внутренний action runtime без опубликованных host-портов. Выполняет проверку JWT, формирует доверенный context, валидирует request/response schema и вызывает `api.invoke(...)` в одной Npgsql transaction. Запускается только после того, как `cli` успешно применит миграции (`service_completed_successfully`).
 - **cli** — Course CLI. При `docker compose up` по умолчанию выполняет `migration apply` и завершается. Для остальных команд (публикация/активация actions и workflow maps, запуск процессов, сигналы) запускается вручную через `docker compose run --rm cli ...`. Пишет в stdout ровно один JSON-документ (envelope `status: ok|error`), диагностика — в stderr.
-- **postgres** — PostgreSQL 17, авторитетное состояние (схемы `course`, `api`, `workflow`, `autocheck`), данные хранятся в named volume `course_pgdata` и переживают пересоздание любого другого контейнера.
+- **postgres** — PostgreSQL 17, авторитетное состояние (схемы `course`, `api`, `workflow`, `training`, `autocheck`), данные хранятся в named volume `course_pgdata` и переживают пересоздание любого другого контейнера.
 - **worker-a** и **worker-b** — два экземпляра одного и того же образа `Workflow.Worker`, с разными `COURSE_INSTANCE_ID` (владелец лизинга). Опрашивают очередь готовых заданий (`workflow.claim_jobs`), выполняют автоматические шаги через тот же shared `ActionExecutor`, что и `api`, и продвигают процесс через `workflow.finish_job`/`fail_job`.
 
 Направление вызовов для HTTP-actions: клиент → `gateway:8080` → `api` → JWT + context → resolve action manifest → Npgsql transaction → `api.invoke(...)` → зарегистрированная PostgreSQL-функция → commit/rollback.
@@ -69,6 +69,53 @@ Workflow map — исполняемый контракт процесса, а н
 
 Отдельный HTTP-action `workflow.get` (module=`workflow`, action=`get`, policy `workflow:read`) отдаёт снимок процесса вместе с шагами, заданиями и попытками — тот же путь `Gateway → Api → api.invoke`, что и обычные actions недели 1.
 
+**Файлы карт не монтируются в контейнер `cli`** (никаких bind-mount'ов в `docker-compose.yml` — это осознанно, см. «Ограничения»), поэтому передавайте их через stdin с флагом `-T` (иначе `docker compose run` портит поток при пайпе):
+
+```bash
+cat contracts/course-1/maps/workflow-smoke-v1.flow.json | docker compose run --rm -T cli flow validate /dev/stdin
+cat contracts/course-1/maps/workflow-smoke-v1.flow.json | docker compose run --rm -T cli flow publish /dev/stdin
+```
+
+`--data`/`--payload` у `flow start`/`flow signal` работают так же — это тоже путь к файлу, а не inline JSON, поэтому для передачи данных без монтирования volume используется тот же приём:
+
+```bash
+echo '{"value": 42}' | docker compose run --rm -T cli flow start workflow-smoke --business-key smoke-1 --data /dev/stdin
+```
+
+#### Тестовый action и smoke-карты
+
+`training.canary` (module=`training`, action=`canary`, policy `workflow:execute`) — минимальная идемпотентная PostgreSQL-функция без предметной сложности, специально для демонстрации workflow-движка без завязки на `payment.request`/`operation.get`. Идемпотентность — по `request_id` (= `executionId` job'а) через `ON CONFLICT DO NOTHING` в `training.canary_log`; регистрация — `010_insert_training_canary_action.sql`.
+
+На ней построены три карты в `contracts/course-1/maps/`:
+
+| Карта | Путь | Демонстрирует |
+|---|---|---|
+| `workflow-smoke`, v1 | `workflow-smoke-v1.flow.json` | `automatic → wait_signal → end`; сигнал `training.completed`, исход `COMPLETED` |
+| `workflow-smoke`, v2 | `workflow-smoke-v2.flow.json` | Тот же скелет, но сигнал `training.completed_v2` и исход `COMPLETED_V2` — наблюдаемое отличие поведения от v1, используется для проверки version pinning |
+| `workflow-smoke-manual-wait`, v1 | `workflow-smoke-manual-wait-v1.flow.json` | `automatic → manual → end`; достижимость `WAITING_MANUAL` (завершение `manual` по HTTP — неделя 3, здесь не требуется) |
+
+Полный прогон, включая проверку pinning (старый процесс не переезжает на новую активную версию):
+
+```bash
+cat contracts/course-1/maps/workflow-smoke-v1.flow.json | docker compose run --rm -T cli flow publish /dev/stdin
+docker compose run --rm cli flow activate workflow-smoke --version 1
+echo '{"value": 42}' | docker compose run --rm -T cli flow start workflow-smoke --business-key smoke-1 --data /dev/stdin
+docker compose run --rm cli flow get <processId>          # WAITING_SIGNAL, currentStepKey: wait_result
+
+docker compose run --rm cli flow signal <processId> --type training.completed --message-id sig-1 --payload /dev/null
+docker compose run --rm cli flow get <processId>          # COMPLETED
+
+cat contracts/course-1/maps/workflow-smoke-v2.flow.json | docker compose run --rm -T cli flow publish /dev/stdin
+docker compose run --rm cli flow activate workflow-smoke --version 2
+echo '{"value": 7}' | docker compose run --rm -T cli flow start workflow-smoke --business-key smoke-2 --data /dev/stdin
+docker compose run --rm cli flow get <newProcessId>        # WAITING_SIGNAL, ждёт training.completed_v2 (не v1-сигнал)
+
+cat contracts/course-1/maps/workflow-smoke-manual-wait-v1.flow.json | docker compose run --rm -T cli flow publish /dev/stdin
+docker compose run --rm cli flow activate workflow-smoke-manual-wait --version 1
+echo '{"value": 1}' | docker compose run --rm -T cli flow start workflow-smoke-manual-wait --business-key manual-1 --data /dev/stdin
+docker compose run --rm cli flow get <manualProcessId>     # WAITING_MANUAL
+```
+
 ---
 
 ### Worker
@@ -82,10 +129,10 @@ Workflow map — исполняемый контракт процесса, а н
 3. Вызывает **тот же** `Common.ActionExecution.ActionExecutor`, что использует `api` — с `trustedContext.principal = "workflow-worker"` и `RequestId = executionId` (идемпотентность на уровне action не завязана на HTTP `Idempotency-Key`).
 4. При успехе — `workflow.finish_job` в той же транзакции, что и сам action, затем commit. При неуспехе — rollback транзакции action, затем `workflow.fail_job` уже в отдельной транзакции: не исчерпан бюджет попыток и ошибка retryable → `RETRY_WAIT` с задержкой из `delays_ms`; иначе → `DEAD`, шаг и процесс переводятся в `FAILED`, пишется событие `TaskFailed`.
 
-Гарантии:
+Гарантии (подробное обоснование — [ADR 003](docs/003-lease-fencing-at-least-once.md)):
 
 - **Lease/fencing** — `finish_job`/`fail_job` принимают запрос только при точном совпадении `job_id` + `owner` + `lease_version` + ожидаемого состояния `LEASED`. Просроченный, но ещё не переподхваченный лизинг не тратит бюджет попыток (попытка помечается `STALE`).
-- **Один предметный эффект** — `executionId` job'а не меняется между попытками одного и того же задания и используется как ключ идемпотентности при вызове action.
+- **Один предметный эффект** — `executionId` job'а не меняется между попытками одного и того же задания и используется как ключ идемпотентности при вызове action (дедупликация — на стороне целевой функции, `ON CONFLICT DO NOTHING`). Журнал диспетчеризации (`course.action_dispatches`) при этом умышленно **не** дедуплицируется по `executionId` — это append-only аудит попыток вызова, а не сам эффект; при reclaim на нём может быть больше одной строки на одну job, и это ожидаемое поведение at-least-once, а не дефект.
 - **Восстановление после recreate** — состояние процессов, заданий и история переходов живут в PostgreSQL, а не в памяти worker'а; после пересоздания контейнера worker продолжает разбирать очередь с нуля, не теряя прогресс уже идущих процессов.
 
 `workflow_worker` — отдельная ограниченная роль PostgreSQL (`LOGIN`, пароль из `COURSE_WORKFLOW_WORKER_PASSWORD`) без единого прямого `GRANT` на таблицы: только `EXECUTE` на `workflow.claim_jobs`, `workflow.finish_job`, `workflow.fail_job` и `api.invoke`. `api`/`cli` продолжают подключаться отдельной (более широкой) учётной записью — это разные роли с разным набором прав.
@@ -124,6 +171,9 @@ SQL-миграции лежат в `Api/Migrations/ChecksummedMigrations/` и п
 | `007_workflow_functions.sql` | `workflow.claim_jobs`, `finish_job`, `fail_job`, `enter_step`, `get_process` |
 | `008_workflow_lifecycle.sql` | `workflow.start_process`, `workflow.receive_signal`, `apply_signal` |
 | `009_insert_workflow_action.sql` | Регистрация HTTP-action `workflow.get` в `course.action_catalog` |
+| `010_insert_training_canary_action.sql` | Схема `training`, идемпотентная test-функция `training.canary`, регистрация в `course.action_catalog` — основа для smoke-карт (см. «Workflow-карты») |
+
+Файлы `005_role_ownership_and_publication.sql`, `006_db_invariants_and_append_only.sql`, `007_builtin_schema_dialect.sql`, `008_grant_gaps_from_public_report.sql` относятся к неделе 1 (владение объектами схемы, инварианты, донастройка прав) — совпадение номеров с week2-файлами не мешает порядку применения: лексикографически `role_...`/`db_invariants_...`/`builtin_...`/`grant_gaps_...` идут раньше своих `workflow_...`-тёзок с тем же числовым префиксом.
 
 ```bash
 docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigrations
@@ -177,7 +227,13 @@ docker compose run --rm cli flow get <process-id>
 - Количество попыток retry ограничено `task.max_attempts` из карты; `delays_ms` — фиксированный список задержек, не экспоненциальный backoff.
 - На первой неделе `process_id` в `operations` мог быть `null` — с недели 2 worker заполняет его при вызове action из workflow, но записи, созданные до этой миграции, не мигрируются задним числом.
 - Поддерживается только валюта `RUB` (унаследовано от `payment.request` недели 1).
+- `docker-compose.yml` не содержит bind-mount'ов (осознанно, часть контракта безопасности): файлы карт и данных для `cli` передаются через `/dev/stdin`, а не монтированием — см. «Workflow-карты».
+- Тесты `two-worker-reclaim-and-stale-finish` и `action-finish-rollback-and-recovery` в `./check.sh` могут падать по таймингу на медленных/загруженных хостах — это не потеря/порча состояния; полный разбор с доказательной базой (посекундные логи, три разных Docker-окружения, что исключено и что подтверждено как причина) — [docs/004-known-flaky-tests.md](docs/004-known-flaky-tests.md).
 
 ADR:
 - [ADR 001: Trust boundary](docs/001-trust-boundary.md)
 - [ADR 002: Технический и предметный результат](docs/002-technical-vs-domain-result.md)
+- [ADR 003: Lease, fencing и at-least-once](docs/003-lease-fencing-at-least-once.md)
+
+Известные проблемы:
+- [004: Известная нестабильность двух тестов автопроверки](docs/004-known-flaky-tests.md)
