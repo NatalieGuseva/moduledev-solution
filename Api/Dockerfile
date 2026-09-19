@@ -16,8 +16,13 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 EXPOSE 8080
 
-# ✅ Устанавливаем curl для healthcheck
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# ✅ Устанавливаем curl для healthcheck.
+# libgssapi-krb5-2 — Npgsql на Linux пытается динамически подгрузить
+# libgssapi_krb5.so.2 при установлении соединения; без неё это ошибка
+# на каждой попытке подключения. Это НЕ libkrb5-3 (тот даёт только
+# libkrb5.so.3, проверено на реальной системе) — libgssapi-krb5-2 тянет
+# libkrb5-3 как зависимость сам.
+RUN apt-get update && apt-get install -y curl libgssapi-krb5-2 && rm -rf /var/lib/apt/lists/*
 
 COPY --from=publish /app/publish .
 ENTRYPOINT ["dotnet", "Api.dll"]

@@ -20,8 +20,11 @@ RUN dotnet publish "Cli.csproj" -c Release -o /app/publish /p:UseAppHost=false
 # Финальный образ
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
 WORKDIR /app
+# libgssapi-krb5-2 (не libkrb5-3 — тот даёт только libkrb5.so.3, а
+# Npgsql на Linux ищет именно libgssapi_krb5.so.2 при установлении
+# соединения; libkrb5-3 тянется этим пакетом как зависимость сам).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libkrb5-3 \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=publish /app/publish .
 COPY ["Api/Migrations", "Migrations"]

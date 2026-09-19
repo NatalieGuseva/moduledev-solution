@@ -18,7 +18,16 @@ logger.LogInformation(
     "starting instance={InstanceId} testProfile={TestProfile} failpoint={Failpoint} lease={Lease}s poll={Poll}ms batch={Batch}",
     config.InstanceId, config.TestProfile, config.Failpoint ?? "(none)", config.LeaseSeconds, config.PollIntervalMs, config.ClaimBatchSize);
 
-await using var dataSource = NpgsqlDataSource.Create(config.ConnectionString);
+// Minimum Pool Size держит несколько соединений всегда открытыми и
+// прогретыми (аутентификация уже пройдена), чтобы claim/finish/fail
+// никогда не упирались в холодное открытие нового физического
+// соединения — под тестовым 2-секундным лизингом даже разовая заминка
+// на establish/negotiate съедает весь бюджет попытки.
+var connectionStringBuilder = new NpgsqlConnectionStringBuilder(config.ConnectionString)
+{
+    MinPoolSize = 4
+};
+await using var dataSource = NpgsqlDataSource.Create(connectionStringBuilder.ConnectionString);
 var actionExecutor = new ActionExecutor(loggerFactory.CreateLogger<ActionExecutor>());
 var stepRunner = new StepRunner(dataSource, actionExecutor, config, loggerFactory.CreateLogger<StepRunner>());
 
