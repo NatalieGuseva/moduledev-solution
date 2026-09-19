@@ -1,0 +1,60 @@
+{
+  "contract_version": "course-1",
+  "flow_name": "workflow-smoke-manual-wait",
+  "version": 1,
+  "start_step": "invoke_canary",
+  "steps": [
+    {
+      "key": "invoke_canary",
+      "type": "automatic",
+      "task": {
+        "service": "postgres",
+        "module": "training",
+        "action": "canary",
+        "action_version": 1,
+        "required_policy": ["workflow:execute"],
+        "timeout_ms": 2000,
+        "retry": {
+          "max_attempts": 3,
+          "delays_ms": [200, 400]
+        },
+        "input_mapping": {
+          "/value": "/value"
+        },
+        "input_constants": {}
+      }
+    },
+    {
+      "key": "review",
+      "type": "manual",
+      "allowed_outcomes": ["APPROVED", "REJECTED"]
+    },
+    {
+      "key": "approved",
+      "type": "end",
+      "outcome": "COMPLETED"
+    },
+    {
+      "key": "rejected",
+      "type": "end",
+      "outcome": "REJECTED"
+    }
+  ],
+  "transitions": [
+    {
+      "from": "invoke_canary",
+      "outcome": "APPLIED",
+      "to": "review"
+    },
+    {
+      "from": "review",
+      "outcome": "APPROVED",
+      "to": "approved"
+    },
+    {
+      "from": "review",
+      "outcome": "REJECTED",
+      "to": "rejected"
+    }
+  ]
+}
