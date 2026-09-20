@@ -11,10 +11,10 @@ namespace Api.Tests;
 // - "Права ролей и неизменяемость: прикладная runtime-роль не может
 //   изменять operation или удалять event" — раньше это было недоказуемо,
 //   потому что api реально ходил под postgres-суперпользователем.
-// - Найденный по week-1-public-report.json баг: opencheck.canary (её
-//   заводит autocheck/fixtures/migrations/900_opencheck_probe.sql) должна
-//   быть доступна course_owner, иначе SECURITY DEFINER-функции
-//   opencheck.probe_v1/v2 падают с ошибкой доступа (миграция 008).
+// - Найденный по week-1-public-report.json баг: таблица, которую заводит
+//   фикстура автопроверки (в проде — суперпользователем postgres, см.
+//   docker-compose.yml), должна быть доступна course_owner "на будущее",
+//   а не только по жёстко прописанному имени (миграция 008, пункт 5).
 [Collection("Postgres")]
 public class RoleGrantsRegressionTests
 {
@@ -113,25 +113,36 @@ public class RoleGrantsRegressionTests
     }
 
     [Fact]
-    public async Task CourseOwner_CanInsertIntoOpencheckCanary()
+    public async Task CourseOwner_CanAccessAnyFutureTableCreatedByPostgresInSchemas()
     {
-        // Ровно тот баг из week-1-public-report.json: opencheck.canary
-        // заводит autocheck-фикстура (900_opencheck_probe.sql), выполняемая
-        // от лица course_migrator — до миграции 008 course_owner (владелец
-        // opencheck.probe_v1/v2, SECURITY DEFINER) не имел на неё ни
-        // одного права, и любой вызов opencheck.probe падал 500 "Target
-        // function execution failed" ещё до идемпотентности.
-        await using var connection = new NpgsqlConnection(_fixture.MigratorConnectionString);
-        await connection.OpenAsync();
-        await connection.ExecuteAsync("SET ROLE course_owner");
+        // Тот же класс проблемы, что вызвал 500 "Target function execution
+        // failed" в week-1-public-report.json (opencheck.canary, заведённая
+        // фикстурой автопроверки, была недоступна course_owner) — но без
+        // завязки на конкретный файл фикстуры: в этом репозитории нет
+        // committed "900_opencheck_probe.sql" с таблицей opencheck.canary
+        // (autocheck/fixtures/migrations содержит только фикстуру недели 2,
+        // с полностью другой схемой), и тест на конкретное имя таблицы был
+        // бы тестом на файл, которого нет, а не на сам механизм.
+        //
+        // Проверяем то, что реально должно защищать: "cli"/"api" в проде
+        // подключаются суперпользователем (POSTGRES_USER, см.
+        // docker-compose.yml) — точно так же, как этот тест создаёт
+        // таблицу здесь. 008_grant_gaps_from_public_report.sql (пункт 5)
+        // регистрирует "ALTER DEFAULT PRIVILEGES FOR ROLE postgres ...
+        // GRANT ALL PRIVILEGES ON TABLES" в этих трёх схемах — значит,
+        // ЛЮБАЯ будущая таблица (любое имя, любая версия фикстуры) должна
+        // быть сразу доступна course_owner, без ручного GRANT под каждую.
+        var tableName = $"future_fixture_{Guid.NewGuid():N}";
 
-        var exception = await Record.ExceptionAsync(() => connection.ExecuteAsync(
-            // Реальная схема из autocheck/fixtures/migrations/900_opencheck_probe.sql:
-            // opencheck.canary(marker text PRIMARY KEY, created_at timestamptz) —
-            // только два столбца, без correlation_id/principal. probe_v1/v2 сами
-            // вставляют только marker ("INSERT INTO opencheck.canary(marker) VALUES (v_value)"),
-            // created_at берёт свой DEFAULT clock_timestamp().
-            "INSERT INTO opencheck.canary (marker) VALUES (@marker)",
+        await using var superuserConnection = new NpgsqlConnection(_fixture.SuperuserConnectionString);
+        await superuserConnection.OpenAsync();
+        await superuserConnection.ExecuteAsync(
+            $"CREATE TABLE opencheck.{tableName} (marker TEXT PRIMARY KEY)");
+
+        await superuserConnection.ExecuteAsync("SET ROLE course_owner");
+
+        var exception = await Record.ExceptionAsync(() => superuserConnection.ExecuteAsync(
+            $"INSERT INTO opencheck.{tableName} (marker) VALUES (@marker)",
             new { marker = $"regression-{Guid.NewGuid()}" }));
 
         Assert.Null(exception);

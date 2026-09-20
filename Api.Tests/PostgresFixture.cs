@@ -118,10 +118,18 @@ public sealed class PostgresFixture : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
     }
 
-    // Применяет файлы из Api/Migrations/ChecksummedMigrations (001-008) и,
+    // Применяет файлы из Api/Migrations/ChecksummedMigrations (001-010) и,
     // следом за ними, autocheck/fixtures/migrations/900_opencheck_probe.sql —
     // именно тот файл, который в проде создаёт opencheck.canary и вскрыл
     // пробел в правах course_owner (см. миграцию 008 и RoleGrantsRegressionTests).
+    //
+    // Подключение — СУПЕРПОЛЬЗОВАТЕЛЕМ (SuperuserConnectionString), не
+    // course_migrator: ровно так же, как реально подключается "cli" в
+    // docker-compose.yml (ConnectionStrings__CourseDb с POSTGRES_USER).
+    // course_migrator, даже будучи членом course_owner, не имеет CREATEROLE
+    // (членство в роли не передаёт role-атрибуты вроде CREATEROLE/CREATEDB) —
+    // подключение им сюда падало бы на "CREATE ROLE workflow_worker" в
+    // 005_workflow_schema.sql с "permission denied to create role".
     private async Task ApplyMigrationsAsync()
     {
         var migrationsDir = Path.Combine(AppContext.BaseDirectory, "Migrations");
@@ -135,7 +143,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                 $"No migration files found under '{migrationsDir}'. Check the <None Include=.../> globs in Api.Tests.csproj.");
         }
 
-        await using var connection = new NpgsqlConnection(MigratorConnectionString);
+        await using var connection = new NpgsqlConnection(SuperuserConnectionString);
         await connection.OpenAsync();
 
         foreach (var file in files)

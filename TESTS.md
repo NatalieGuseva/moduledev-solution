@@ -1,8 +1,10 @@
 # Regression tests
 
-Закрывает единственный оставшийся пункт из фидбэка: *«Тестирование:
-собственных regression tests нет»*. Два новых проекта, оба независимы от
-`autocheck` и гоняются локально/в CI одной командой `dotnet test`.
+Закрывает пункт из фидбэка: *«Тестирование: собственных regression tests
+нет»* — и отдельно пункт *«Не хватает собственных регрессий состояния и
+сбоев»* (двумя новыми тестовыми классами в `Api.Tests`, см. ниже). Оба
+проекта независимы от `autocheck` и гоняются локально/в CI одной командой
+`dotnet test`.
 
 ## Cli.Tests — unit-тесты (без Docker, без БД)
 
@@ -19,10 +21,20 @@ dotnet test Cli.Tests/Cli.Tests.csproj
 
 Поднимает настоящий `postgres:17-alpine` через Testcontainers, накатывает
 **те же самые** файлы, что и `cli migration apply` в проде
-(`Api/Migrations/ChecksummedMigrations/*.sql` + `autocheck/fixtures/migrations/
-900_opencheck_probe.sql`), создаёт те же четыре identity, что и
+(`Api/Migrations/ChecksummedMigrations/*.sql`, 001–010, плюс любые файлы из
+`autocheck/fixtures/migrations/`), создаёт те же четыре identity, что и
 `postgres-init/00-bootstrap-roles.sh` — и проверяет контракт с БД напрямую,
-от лица каждой роли:
+от лица каждой роли.
+
+Миграции применяются **суперпользователем** (`SuperuserConnectionString`),
+не `course_migrator` — так же, как реально подключается `cli` в
+`docker-compose.yml` (`ConnectionStrings__CourseDb` с `POSTGRES_USER`).
+`course_migrator`, даже будучи членом `course_owner`, не имеет `CREATEROLE`
+(членство в роли не передаёт role-атрибуты вроде `CREATEROLE`/`CREATEDB`) —
+подключение им сюда падало бы уже на `CREATE ROLE workflow_worker` в
+`005_workflow_schema.sql` с `permission denied to create role`, и **весь**
+`Api.Tests` не проходил бы дальше инициализации фикстуры, независимо от
+содержимого конкретных тестов.
 
 - **`IdempotencyRegressionTests`** — атомарный claim до эффекта
   («Idempotency record создаётся после предметного эффекта»), и отдельно —
@@ -38,8 +50,39 @@ dotnet test Cli.Tests/Cli.Tests.csproj
 - **`RoleGrantsRegressionTests`** — обе стороны контракта на роли:
   `course_runtime` не может писать в `operations`/`action_catalog` напрямую,
   `course_publisher` не видит `operations` вообще, и наоборот — у каждой
-  роли есть именно то, что ей нужно (`EXECUTE` на `api.invoke` для runtime,
-  `course_owner` может писать в `opencheck.canary`).
+  роли есть именно то, что ей нужно (`EXECUTE` на `api.invoke` для runtime).
+  Отдельно — `CourseOwner_CanAccessAnyFutureTableCreatedByPostgresInSchemas`:
+  создаёт таблицу со случайным именем в `opencheck` от лица суперпользователя
+  (так же, как это делает любая фикстура автопроверки в проде) и проверяет,
+  что `course_owner` получает к ней доступ автоматически, без ручного
+  `GRANT` под конкретное имя. Тест умышленно не завязан на committed файл
+  фикстуры с фиксированным именем таблицы (`opencheck.canary` из более
+  ранних комментариев к миграции 008 — такой файл в этом репозитории не
+  поставляется, `autocheck/fixtures/migrations/` содержит только фикстуру
+  недели 2 с другой схемой) — проверяется сам механизм (`ALTER DEFAULT
+  PRIVILEGES FOR ROLE postgres`, миграция 008, пункт 5), а не конкретное имя.
+- **`WorkflowReclaimRegressionTests`** — самостоятельный набор на lease/
+  fencing/reclaim, независимый от `autocheck`, на границе `SET ROLE
+  workflow_worker` (не суперпользователем — чтобы ловить и grant-ошибки
+  тоже):
+  - `TwoWorkers_CompetingClaim_OnlyOneWins` — два конкурирующих
+    `claim_jobs` за одну и ту же `READY` job; ровно один получает её
+    (`FOR UPDATE SKIP LOCKED`).
+  - `ExpiredLease_ReclaimedByAnotherWorker_PreservesJobAndExecutionId_NewAttempt` —
+    протухший лизинг реклеймится другим воркером: `jobId`/`executionId`
+    сохраняются, новый `attemptId`, `leaseVersion` растёт, прежняя попытка
+    помечается `STALE`.
+  - `StaleFinish_RejectedWithLeaseStale_DoesNotOverwriteReclaimedJob` —
+    устаревший `finish_job` (старые `owner`/`leaseVersion`) отклоняется
+    как `workflow.lease_stale`, не трогая состояние, которое уже
+    принадлежит новому владельцу.
+  - `CrashBetweenActionAndFinish_RecoveredByAnotherWorker_ExactlyOneEffect` —
+    воспроизводит «остановился между действием и подтверждением»: первый
+    worker успевает вызвать action, «падает» до `finish_job`; второй
+    реклеймит job, тоже вызывает action тем же `executionId` и корректно
+    завершает. Проверяется не только ответ команд, но и итоговое число
+    предметных эффектов (`training.canary_log`) — ровно один, несмотря на
+    два физических вызова `api.invoke`.
 
 ```bash
 dotnet test Api.Tests/Api.Tests.csproj

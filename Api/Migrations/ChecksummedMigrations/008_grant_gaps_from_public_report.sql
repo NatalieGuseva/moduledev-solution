@@ -158,3 +158,46 @@ BEGIN
     END LOOP;
 END
 $do$;
+
+-- 5) Тот же класс проблемы, что в пункте (2), но для роли, которая
+--    реально создаёт объекты в проде. Правило "FOR ROLE course_migrator
+--    ... GRANT ALL PRIVILEGES ON TABLES" из пункта (2) в реальности НИКОГДА
+--    не срабатывает: "cli"/"api" подключаются под POSTGRES_USER (см.
+--    docker-compose.yml и пункт 4 выше), а не под course_migrator — то
+--    есть НИ ОДНА таблица в этой базе фактически не создаётся ролью
+--    course_migrator. Единственное, что до сих пор закрывало этот пробел
+--    для opencheck.canary конкретно — точечный ALTER TABLE OWNER TO из
+--    пункта (3) по жёстко прописанному имени. Любая ДРУГАЯ будущая
+--    таблица в course/opencheck/payment (другое имя фикстуры, другая
+--    версия автопроверки) наступит на ровно ту же ошибку доступа, что
+--    описана в пункте (2), в обход и пункта (2), и пункта (3).
+--
+--    Эмпирически проверено: CREATE TABLE opencheck.<любое имя> суперюзером
+--    postgres → INSERT от course_owner → "permission denied for table" —
+--    до этого правила пункт (4) (USAGE ON SCHEMAS) тут не помогает, он
+--    защищает только СХЕМЫ целиком, а не таблицы внутри уже существующих
+--    (opencheck и так существует с 001_initial.sql). Регистрируем то же
+--    самое правило, что в пункте (2), но "FOR ROLE postgres" — по факту
+--    рабочую версию этого правила.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA course, opencheck, payment
+    GRANT ALL PRIVILEGES ON TABLES TO course_owner;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA course, opencheck, payment
+    GRANT ALL PRIVILEGES ON SEQUENCES TO course_owner;
+
+-- Донастройка задним числом — по той же логике, что и в пункте (4): если
+-- в этом же volume уже успела появиться таблица в одной из этих схем,
+-- созданная postgres до появления этого файла, отдаём её course_owner
+-- сразу, не дожидаясь следующего пересоздания таблицы.
+DO $do$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT schemaname, tablename FROM pg_catalog.pg_tables
+        WHERE schemaname IN ('course', 'opencheck', 'payment')
+          AND tableowner = 'postgres'
+    LOOP
+        EXECUTE format('ALTER TABLE %I.%I OWNER TO course_owner', r.schemaname, r.tablename);
+    END LOOP;
+END
+$do$;

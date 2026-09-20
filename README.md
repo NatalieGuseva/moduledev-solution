@@ -173,10 +173,21 @@ SQL-миграции лежат в `Api/Migrations/ChecksummedMigrations/` и п
 | `009_insert_workflow_action.sql` | Регистрация HTTP-action `workflow.get` в `course.action_catalog` |
 | `010_insert_training_canary_action.sql` | Схема `training`, идемпотентная test-функция `training.canary`, регистрация в `course.action_catalog` — основа для smoke-карт (см. «Workflow-карты») |
 
-Файлы `005_role_ownership_and_publication.sql`, `006_db_invariants_and_append_only.sql`, `007_builtin_schema_dialect.sql`, `008_grant_gaps_from_public_report.sql` относятся к неделе 1 (владение объектами схемы, инварианты, донастройка прав) — совпадение номеров с week2-файлами не мешает порядку применения: лексикографически `role_...`/`db_invariants_...`/`builtin_...`/`grant_gaps_...` идут раньше своих `workflow_...`-тёзок с тем же числовым префиксом.
+Файлы `005_role_ownership_and_publication.sql`, `006_db_invariants_and_append_only.sql`, `007_builtin_schema_dialect.sql`, `008_grant_gaps_from_public_report.sql` относятся к неделе 1 (владение объектами схемы, инварианты, донастройка прав, включая общее правило «любая будущая таблица в `course`/`opencheck`/`payment`, созданная суперпользователем, автоматически доступна `course_owner`» — без него `RoleGrantsRegressionTests` в `Api.Tests` не проходил бы) — совпадение номеров с week2-файлами не мешает порядку применения: лексикографически `role_...`/`db_invariants_...`/`builtin_...`/`grant_gaps_...` идут раньше своих `workflow_...`-тёзок с тем же числовым префиксом.
 
 ```bash
 docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigrations
+```
+
+---
+
+### Собственные тесты
+
+`Cli.Tests` (unit, без Docker) и `Api.Tests` (integration, поднимает реальный `postgres:17-alpine` через Testcontainers) — независимы от `./check.sh`/`autocheck`, гоняются локально и в CI одной командой `dotnet test`. Подробности, состав и обоснование каждого теста — [TESTS.md](TESTS.md).
+
+```bash
+dotnet test Cli.Tests/Cli.Tests.csproj
+dotnet test Api.Tests/Api.Tests.csproj
 ```
 
 ---
