@@ -172,6 +172,7 @@ SQL-миграции лежат в `Api/Migrations/ChecksummedMigrations/` и п
 | `008_workflow_lifecycle.sql` | `workflow.start_process`, `workflow.receive_signal`, `apply_signal` |
 | `009_insert_workflow_action.sql` | Регистрация HTTP-action `workflow.get` в `course.action_catalog` |
 | `010_insert_training_canary_action.sql` | Схема `training`, идемпотентная test-функция `training.canary`, регистрация в `course.action_catalog` — основа для smoke-карт (см. «Workflow-карты») |
+| `011_workflow_attempt_consistency.sql` | `workflow_job.failure_count` (бюджет retry, отдельно от `attempt_count`) и `UNIQUE (job_id, attempt_number)` на `task_attempt` — см. [ADR 003](docs/003-lease-fencing-at-least-once.md) и [docs/004](docs/004-known-flaky-tests.md) |
 
 Файлы `005_role_ownership_and_publication.sql`, `006_db_invariants_and_append_only.sql`, `007_builtin_schema_dialect.sql`, `008_grant_gaps_from_public_report.sql` относятся к неделе 1 (владение объектами схемы, инварианты, донастройка прав, включая общее правило «любая будущая таблица в `course`/`opencheck`/`payment`, созданная суперпользователем, автоматически доступна `course_owner`» — без него `RoleGrantsRegressionTests` в `Api.Tests` не проходил бы) — совпадение номеров с week2-файлами не мешает порядку применения: лексикографически `role_...`/`db_invariants_...`/`builtin_...`/`grant_gaps_...` идут раньше своих `workflow_...`-тёзок с тем же числовым префиксом.
 
@@ -239,12 +240,12 @@ docker compose run --rm cli flow get <process-id>
 - На первой неделе `process_id` в `operations` мог быть `null` — с недели 2 worker заполняет его при вызове action из workflow, но записи, созданные до этой миграции, не мигрируются задним числом.
 - Поддерживается только валюта `RUB` (унаследовано от `payment.request` недели 1).
 - `docker-compose.yml` не содержит bind-mount'ов (осознанно, часть контракта безопасности): файлы карт и данных для `cli` передаются через `/dev/stdin`, а не монтированием — см. «Workflow-карты».
-- Тесты `two-worker-reclaim-and-stale-finish` и `action-finish-rollback-and-recovery` в `./check.sh` могут падать по таймингу на медленных/загруженных хостах — это не потеря/порча состояния; полный разбор с доказательной базой (посекундные логи, три разных Docker-окружения, что исключено и что подтверждено как причина) — [docs/004-known-flaky-tests.md](docs/004-known-flaky-tests.md).
+- `docker-compose.yml` не содержит bind-mount'ов (осознанно, часть контракта безопасности): файлы карт и данных для `cli` передаются через `/dev/stdin`, а не монтированием — см. «Workflow-карты».
 
 ADR:
 - [ADR 001: Trust boundary](docs/001-trust-boundary.md)
 - [ADR 002: Технический и предметный результат](docs/002-technical-vs-domain-result.md)
 - [ADR 003: Lease, fencing и at-least-once](docs/003-lease-fencing-at-least-once.md)
 
-Известные проблемы:
-- [004: Известная нестабильность двух тестов автопроверки](docs/004-known-flaky-tests.md)
+Разбор задним числом:
+- [004: Как найдена и исправлена причина двух падений `./check.sh` (`two-worker-reclaim-and-stale-finish`, `action-finish-rollback-and-recovery`)](docs/004-known-flaky-tests.md) — корень был в `job.attempt_count` (не обновлялся при `claim_jobs`), исправлено миграцией 011; сохранён путь расследования, включая первоначально ошибочную гипотезу про скорость хоста.

@@ -213,7 +213,12 @@ BEGIN
     SET state = 'LEASED',
         lease_owner = p_owner,
         lease_version = j.lease_version + 1,
-        lease_until = now() + (p_lease_seconds || ' seconds')::interval
+        lease_until = now() + (p_lease_seconds || ' seconds')::interval,
+        -- attempt_count растёт на каждый claim (в т.ч. реклейм протухшего
+        -- лизинга) синхронно с attempt_number ниже — см. миграцию 011.
+        -- Бюджет retry по-прежнему считается отдельным failure_count,
+        -- который этот UPDATE не трогает.
+        attempt_count = j.attempt_count + 1
     WHERE j.job_id = ANY(v_job_ids);
 
     UPDATE workflow.step_instance si
@@ -310,11 +315,9 @@ BEGIN
     SELECT * INTO v_step FROM workflow.step_instance WHERE step_instance_id = v_job.step_instance_id FOR UPDATE;
     SELECT * INTO v_process FROM workflow.process_instance WHERE process_id = v_job.process_id FOR UPDATE;
 
-    -- attempt_count должен отражать реальное число попыток (как и на
-    -- retry-ветке в fail_job) — иначе при успехе с первой попытки
-    -- job.attempt_count остаётся 0, а task_attempt уже содержит 1
-    -- строку: их количества расходятся.
-    UPDATE workflow.workflow_job SET state = 'SUCCEEDED', attempt_count = attempt_count + 1 WHERE job_id = p_job_id;
+    -- attempt_count уже увеличен на этот claim внутри claim_jobs (см.
+    -- миграцию 011) — здесь его больше не трогаем, чтобы не задвоить.
+    UPDATE workflow.workflow_job SET state = 'SUCCEEDED' WHERE job_id = p_job_id;
 
     UPDATE workflow.task_attempt
     SET status = 'SUCCEEDED', outcome = p_outcome, result = p_result, finished_at = now()
@@ -427,9 +430,13 @@ BEGIN
     -- (p_retryable = false, классификацию делает C#-сторона) либо
     -- исчерпанный бюджет попыток — job DEAD, step/process FAILED,
     -- обязательное событие TaskFailed (единственное имя события,
-    -- жёстко зафиксированное заданием).
-    IF (NOT p_retryable) OR (v_job.attempt_count + 1 >= v_task_def.max_attempts) THEN
-        UPDATE workflow.workflow_job SET state = 'DEAD', attempt_count = attempt_count + 1 WHERE job_id = p_job_id;
+    -- жёстко зафиксированное заданием). Бюджет считается по
+    -- failure_count (реальные доменные провалы), а не attempt_count
+    -- (все claim'ы включая stale-реклеймы, см. миграцию 011) — иначе
+    -- job, которой просто не повезло с лизингом, могла бы уйти в DEAD
+    -- преждевременно, ни разу не провалившись по-настоящему.
+    IF (NOT p_retryable) OR (v_job.failure_count + 1 >= v_task_def.max_attempts) THEN
+        UPDATE workflow.workflow_job SET state = 'DEAD', failure_count = failure_count + 1 WHERE job_id = p_job_id;
         UPDATE workflow.step_instance SET state = 'FAILED', completed_at = now()
             WHERE step_instance_id = v_step.step_instance_id;
         UPDATE workflow.process_instance SET state = 'FAILED', updated_at = now()
@@ -441,16 +448,16 @@ BEGIN
     END IF;
 
     -- "После retryable failure N используется delays_ms[N - 1]" — N это
-    -- порядковый номер только что случившегося отказа (1-based), т.е.
-    -- N = attempt_count + 1. delays_ms[N-1] в 1-based нотации задания —
-    -- это ровно v_task_def.delays_ms ->> attempt_count в 0-based индексации
-    -- jsonb-массива Postgres. attempt_count здесь гарантированно в
+    -- порядковый номер только что случившегося ДОМЕННОГО отказа (1-based),
+    -- т.е. N = failure_count + 1. delays_ms[N-1] в 1-based нотации задания —
+    -- это ровно v_task_def.delays_ms ->> failure_count в 0-based индексации
+    -- jsonb-массива Postgres. failure_count здесь гарантированно в
     -- пределах [0, max_attempts-2] — проверено веткой выше.
-    v_delay_ms := (v_task_def.delays_ms ->> v_job.attempt_count)::bigint;
+    v_delay_ms := (v_task_def.delays_ms ->> v_job.failure_count)::bigint;
 
     UPDATE workflow.workflow_job
     SET state = 'RETRY_WAIT',
-        attempt_count = attempt_count + 1,
+        failure_count = failure_count + 1,
         next_attempt_at = now() + (v_delay_ms || ' milliseconds')::interval
     WHERE job_id = p_job_id;
 

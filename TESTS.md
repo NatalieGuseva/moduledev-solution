@@ -83,6 +83,26 @@ dotnet test Cli.Tests/Cli.Tests.csproj
     завершает. Проверяется не только ответ команд, но и итоговое число
     предметных эффектов (`training.canary_log`) — ровно один, несмотря на
     два физических вызова `api.invoke`.
+  - `AttemptCountTracksAllClaims_FailureCountTracksOnlyDomainFailures_StaysConsistentWithTaskAttemptHistory` —
+    пункт фидбэка «Job-счётчик попыток не обновляется вместе с attempt»:
+    прогоняет job через stale-реклейм → реальный retryable-провал →
+    успешное завершение и проверяет, что `job.attempt_count` в точности
+    равен числу строк `task_attempt` на каждом шаге (миграция 011
+    разделила единый счётчик на `attempt_count`, растущий на каждый
+    claim, и `failure_count`, растущий только на реальных доменных
+    провалах — см. [ADR 003](../docs/003-lease-fencing-at-least-once.md)).
+  - `TaskAttempt_DuplicateAttemptNumberForSameJob_IsRejectedByUniqueConstraint` —
+    прямая проверка `UNIQUE (job_id, attempt_number)` из миграции 011:
+    защита инварианта «attempt_count == count(task_attempt)» от будущей
+    регрессии в логике нумерации, а не только доказательство текущего
+    отсутствия бага.
+  - `ReceiveSignal_DuplicateMessageId_ReturnsDuplicateWithoutReapplying` —
+    "повтор сигнала" из фидбэка: тот же `message_id`/процесс/тип/тело
+    второй раз возвращает `duplicate`, не заводит вторую строку в
+    `workflow_signal` и не продвигает процесс повторно.
+  - `ReceiveSignal_ConflictingMessageId_RejectedWithoutOverwritingOriginal` —
+    "конфликт сигнала": тот же `message_id`, но другое тело отклоняется как
+    `workflow.signal_conflict`, не перезаписывая исходную принятую запись.
 
 ```bash
 dotnet test Api.Tests/Api.Tests.csproj
