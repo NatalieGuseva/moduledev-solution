@@ -15,6 +15,9 @@ builder.Services.AddControllers();
 builder.Services.AddScoped<CorrelationAndErrorMiddleware>();
 builder.Services.AddScoped<JwtContextMiddleware>();
 builder.Services.AddScoped<JsonSchemaValidationMiddleware>();
+// FIX: ProviderSignatureMiddleware отсутствовал в DI-регистрации, из-за чего
+// app.UseMiddleware<ProviderSignatureMiddleware>() ниже не мог бы его поднять.
+builder.Services.AddScoped<ProviderSignatureMiddleware>();
 
 // Общий исполнитель экшена (Common.ActionExecution) — тот же класс будет использовать
 // Workflow.Worker на неделе 2, поэтому он живёт в Common, а не в Api.
@@ -39,6 +42,11 @@ if (app.Environment.IsDevelopment())
 app.UseMiddleware<CorrelationAndErrorMiddleware>();   // 1. Сборка Correlation ID и перехват всех ошибок
 app.UseMiddleware<JwtContextMiddleware>();             // 2. Валидация JWT
 app.UseMiddleware<JsonSchemaValidationMiddleware>();   // 3. Валидация параметров и payload
+// FIX: ProviderSignatureMiddleware должен идти строго ПОСЛЕ JsonSchemaValidationMiddleware,
+// потому что он читает context.Items["RawPayloadString"], которое кладёт именно JsonSchema.
+// Без этой регистрации запрос без X-Provider-Signature доходил до api.invoke и падал на
+// log_dispatch(principal = NULL) → 500, вместо ожидаемого 403 receipt.signature_required.
+app.UseMiddleware<ProviderSignatureMiddleware>();      // 4. Проверка X-Provider-Signature (HMAC)
 
 app.MapControllers();
 

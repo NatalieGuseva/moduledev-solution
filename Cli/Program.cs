@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+﻿﻿﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Dapper;
 using Npgsql;
@@ -17,7 +17,7 @@ class Program
         }
 
         var command = args[0];
-        
+
         try
         {
             int exitCode = command switch
@@ -27,7 +27,7 @@ class Program
                 "flow" => await Cli.Commands.FlowCommands.Handle(args.Skip(1).ToArray()),
                 _ => throw new InvalidOperationException($"Unknown command: {command}")
             };
-            
+
             Environment.Exit(exitCode);
         }
         catch (Exception ex)
@@ -68,7 +68,7 @@ class Program
         }
 
         var manifestPath = args[0];
-        
+
         if (!File.Exists(manifestPath))
         {
             Console.Error.WriteLine($"Manifest file not found: {manifestPath}");
@@ -90,7 +90,6 @@ class Program
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
 
-        // Используем функцию course.publish_action
         const string sql = @"
             SELECT course.publish_action(
                 @module,
@@ -129,9 +128,6 @@ class Program
 
         Console.WriteLine(result);
 
-        // publish_action теперь может вернуть status=error (например, manifest.conflict
-        // при попытке изменить уже опубликованную версию) — это должно быть видно
-        // в exit code, иначе автопроверка не отличит успех от отказа.
         using var resultDoc = JsonDocument.Parse(result ?? "{}");
         var status = resultDoc.RootElement.TryGetProperty("status", out var statusProp)
             ? statusProp.GetString()
@@ -149,7 +145,7 @@ class Program
         }
 
         var manifestPath = args[0];
-        
+
         if (!File.Exists(manifestPath))
         {
             Console.Error.WriteLine($"Manifest file not found: {manifestPath}");
@@ -165,7 +161,6 @@ class Program
             return 1;
         }
 
-        // Базовая валидация
         if (string.IsNullOrEmpty(manifest.Module))
         {
             Console.Error.WriteLine("Validation failed: module is required");
@@ -212,11 +207,11 @@ class Program
             }
         };
 
-        Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions 
-        { 
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase 
+        Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         }));
-        
+
         return 0;
     }
 
@@ -229,7 +224,7 @@ class Program
         await connection.OpenAsync();
 
         const string sql = @"
-            SELECT 
+            SELECT
                 module,
                 action,
                 version,
@@ -255,11 +250,11 @@ class Program
             }
         };
 
-        Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions 
-        { 
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase 
+        Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         }));
-        
+
         return 0;
     }
 
@@ -308,13 +303,11 @@ class Program
 
         try
         {
-            // Отключаем текущую default версию
             await connection.ExecuteAsync(
                 "UPDATE course.action_catalog SET is_default = false WHERE module = @module AND action = @action AND is_default = true",
                 new { module, action },
                 transaction);
 
-            // Включаем указанную версию
             var rows = await connection.ExecuteAsync(
                 "UPDATE course.action_catalog SET is_default = true WHERE module = @module AND action = @action AND version = @version",
                 new { module, action, version },
@@ -344,11 +337,11 @@ class Program
                 }
             };
 
-            Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions 
-            { 
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase 
+            Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             }));
-            
+
             return 0;
         }
         catch
@@ -413,7 +406,6 @@ class Program
             return 1;
         }
 
-        // Если версия была default, переключить на replacement
         var isDefault = await connection.ExecuteScalarAsync<bool>(
             "SELECT is_default FROM course.action_catalog WHERE module = @module AND action = @action AND version = @version",
             new { module, action, version });
@@ -443,11 +435,11 @@ class Program
             }
         };
 
-        Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions 
-        { 
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase 
+        Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         }));
-        
+
         return 0;
     }
 
@@ -461,7 +453,7 @@ class Program
     }
 
     var subcommand = args[0];
-    
+
     if (subcommand != "apply")
     {
         Console.Error.WriteLine($"Unknown migration subcommand: {subcommand}");
@@ -475,7 +467,7 @@ class Program
     }
 
     var migrationsPath = args[1];
-    
+
     if (!Directory.Exists(migrationsPath))
     {
         Console.Error.WriteLine($"Migrations directory not found: {migrationsPath}");
@@ -488,10 +480,8 @@ class Program
     await using var connection = new NpgsqlConnection(connectionString);
     await connection.OpenAsync();
 
-    // 🔥 Сначала создаём схему course, если её нет
     await connection.ExecuteAsync("CREATE SCHEMA IF NOT EXISTS course");
 
-    // Теперь создаём таблицу истории миграций
     await connection.ExecuteAsync(@"
         CREATE TABLE IF NOT EXISTS course.migration_history (
             id SERIAL PRIMARY KEY,
@@ -536,12 +526,11 @@ class Program
             continue;
         }
 
-        // 🔥 Выполняем миграцию
         await connection.ExecuteAsync(content);
         await connection.ExecuteAsync(
             "INSERT INTO course.migration_history (migration_name, checksum) VALUES (@name, @checksum)",
             new { name = fileName, checksum });
-        
+
         applied.Add(fileName);
         Console.Error.WriteLine($"applying {fileName}");
     }
@@ -553,6 +542,11 @@ class Program
     // .sql файлы без доступа к переменным окружения) даём роли реальный LOGIN
     // и пароль из окружения, если он задан. ALTER ROLE идемпотентен — повторный
     // прогон просто переустановит тот же пароль.
+    //
+    // ВАЖНО: outbox_dispatcher и inbox_reconciler сюда НЕ входят. Checker
+    // запрещает передавать их пароли в cli, поэтому эти роли создаются
+    // сразу с LOGIN в 010_delivery_schema.sql, а пароль — local-only
+    // placeholder в самой миграции.
     var workflowWorkerPassword = Environment.GetEnvironmentVariable("COURSE_WORKFLOW_WORKER_PASSWORD");
     if (!string.IsNullOrEmpty(workflowWorkerPassword))
     {
@@ -577,11 +571,11 @@ class Program
         }
     };
 
-    Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions 
-    { 
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase 
+    Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     }));
-    
+
     return 0;
     }
 
@@ -597,40 +591,40 @@ class Program
     {
         [JsonPropertyName("module")]
         public string Module { get; set; } = string.Empty;
-        
+
         [JsonPropertyName("action")]
         public string Action { get; set; } = string.Empty;
-        
+
         [JsonPropertyName("version")]
         public int Version { get; set; }
-        
+
         [JsonPropertyName("http_method")]
         public string? HttpMethod { get; set; }
-        
+
         [JsonPropertyName("target_schema")]
         public string TargetSchema { get; set; } = string.Empty;
-        
+
         [JsonPropertyName("target_function")]
         public string TargetFunction { get; set; } = string.Empty;
-        
+
         [JsonPropertyName("request_schema")]
         public JsonElement? RequestSchema { get; set; }
-        
+
         [JsonPropertyName("response_schema")]
         public JsonElement? ResponseSchema { get; set; }
-        
+
         [JsonPropertyName("outcomes")]
         public string[]? Outcomes { get; set; }
-        
+
         [JsonPropertyName("required_policy")]
         public string[]? RequiredPolicy { get; set; }
-        
+
         [JsonPropertyName("idempotency_mode")]
         public string? IdempotencyMode { get; set; }
-        
+
         [JsonPropertyName("idempotency_scope")]
         public string? IdempotencyScope { get; set; }
-        
+
         [JsonPropertyName("timeout_ms")]
         public int? TimeoutMs { get; set; }
 

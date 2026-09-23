@@ -101,19 +101,11 @@ FROM workflow.workflow_event;
 -- Права доступа для проверяющего контура
 -- ============================================================
 
--- Даем доступ к схеме autocheck для PUBLIC (проверяющий контур)
-GRANT USAGE ON SCHEMA autocheck TO PUBLIC;
-
--- Даем SELECT на все view в схеме autocheck для PUBLIC
-GRANT SELECT ON
-    autocheck.flow_versions,
-    autocheck.processes,
-    autocheck.steps,
-    autocheck.jobs,
-    autocheck.attempts,
-    autocheck.signals,
-    autocheck.workflow_events
-TO PUBLIC;
+-- Доступ к схеме и views autocheck — только через course_runtime (не PUBLIC:
+-- PUBLIC означало бы, что python-роли outbox_dispatcher/inbox_reconciler
+-- тоже получают SELECT на эти views, а им не положено ничего, кроме своих
+-- 4 функций в delivery — см. python-roles-no-table-privileges в чекере).
+GRANT USAGE ON SCHEMA autocheck TO course_runtime;
 
 -- Даем SELECT для course_runtime
 GRANT SELECT ON

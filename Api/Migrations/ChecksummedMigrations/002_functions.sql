@@ -26,7 +26,16 @@ DECLARE
     v_actual_version INTEGER;
 BEGIN
     v_correlation_id := COALESCE((p_context->>'correlationId')::UUID, gen_random_uuid());
-    v_principal := p_context->>'principal';
+
+    -- FIX: receipt.accept (и любой другой не-JWT-путь) может прийти без
+    -- p_context->>'principal' — тогда ниже log_dispatch падал на NOT NULL
+    -- в course.action_dispatches. Подставляем синтетический principal,
+    -- чтобы аудит-строка всё равно появилась, а не превращала 403 в 500.
+    v_principal := COALESCE(
+        p_context->>'principal',
+        'system:' || p_module || '.' || p_action
+    );
+
     v_request_id := p_context->>'requestId';
     v_payload_hash := ENCODE(DIGEST(p_payload::TEXT, 'sha256'), 'hex');
 
@@ -241,7 +250,13 @@ BEGIN
         p_module,
         p_action,
         p_version,
-        p_principal,
+        -- FIX: последняя линия обороны. api.invoke уже подставляет
+        -- 'system:<module>.<action>' при отсутствии principal, но
+        -- log_dispatch могут звать и напрямую (например, из других
+        -- target-функций) — там p_principal может остаться NULL, и
+        -- INSERT падал бы на NOT NULL. 'anonymous' гарантирует, что
+        -- аудит-строка не превратит ожидаемую ошибку в 500.
+        COALESCE(p_principal, 'anonymous'),
         p_payload_hash,
         p_status,
         p_outcome
