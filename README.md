@@ -14,12 +14,27 @@ Inbox -> Python reconciler -> workflow signal -> generic C# worker
 
 ### Архитектура
 
-К шести сервисам недели 2 (`gateway`, `api`, `cli`, `postgres`, `worker-a`, `worker-b`) добавляются:
+**Направление вызовов (кто кого вызывает):**
+
+```
+gateway ──HTTP──▶ api ──api.invoke──▶ PostgreSQL (course.*, api.*)
+worker-a/worker-b ──api.invoke──▶ PostgreSQL (workflow.*, payment.*)
+outbox-dispatcher ──delivery.claim_outbox──▶ PostgreSQL
+outbox-dispatcher ──HTTP POST /payments──▶ provider-simulator
+provider-simulator ──HTTP legacy callback──▶ receipt-adapter
+receipt-adapter ──HTTP POST /api/receipt/accept──▶ gateway ──▶ api ──▶ PostgreSQL
+inbox-reconciler ──delivery.reconcile_inbox──▶ PostgreSQL
+inbox-reconciler ──workflow.receive_signal──▶ PostgreSQL (workflow_signal)
+```
+
+`gateway` — единственная внешняя точка входа (host-порт). `api` и `worker-a`/`worker-b` — generic C# action runtime и workflow-worker, без host-портов. Python-сервисы не выбирают flow, лимит, переход или финальный статус — все решения принимает PostgreSQL через `api.invoke`, а Python только доставляет сообщения между PostgreSQL и внешним provider. `receipt-adapter` не имеет database credentials: путь до PostgreSQL идёт через `gateway → api → api.invoke`.
+
+**Ответственность сервисов.** К шести сервисам недели 2 (`gateway`, `api`, `cli`, `postgres`, `worker-a`, `worker-b`) добавляются:
 
 - **outbox-dispatcher** — Python 3.12+, читает `delivery.outbox` через `delivery.claim_outbox(...)`, вызывает provider `POST` с `Idempotency-Key = externalRequestId`, результат фиксирует через `delivery.succeed_outbox(...)`/`delivery.fail_outbox(...)`. Без host-портов, роль в PostgreSQL — `outbox_dispatcher`, без прямого DML по предметным таблицам.
 - **receipt-adapter** — тот же Python-образ, другой entrypoint. Принимает provider legacy callback, собирает receipt v1 (compact JSON, sorted keys), считает `HMAC-SHA256` над точными UTF-8 байтами тела и вызывает `POST /api/receipt/accept` через `gateway` с JWT, `Idempotency-Key = messageId`, `X-Action-Version: 1` и `X-Provider-Signature: v1=<lowercase hex>`. Без database credentials — только HTTP наружу и внутрь периметра.
 - **inbox-reconciler** — тот же Python-образ, третий entrypoint. Применяет `delivery.reconcile_inbox(...)` и подтверждённые receipts, инициируя `workflow signal` для generic C# worker. Роль в PostgreSQL — `inbox_reconciler`, тоже без прямого DML.
-- **provider-simulator** — выданный образ `ghcr.io/fintech-dev-lab/internship-provider-simulator:v0.2.0`, закреплён по digest, наружу не публикуется. Контракт с provider — см. раздел «Provider».
+- **provider-simulator** — выданный образ `ghcr.io/fintech-dev-lab/internship-provider-simulator:v0.2.0`, закреплён по digest, наружу не публикуется.
 
 Диаграмма: [C4 Container diagram](docs/c4-container.md) (обновлена: добавлены `outbox-dispatcher`, `receipt-adapter`, `inbox-reconciler`, `provider-simulator`).
 
@@ -27,20 +42,28 @@ Inbox -> Python reconciler -> workflow signal -> generic C# worker
 
 ### Запуск
 
-Требования те же, что на неделе 2 (Docker Desktop с Compose v2, поддерживающим `service_completed_successfully`, `!override`, `!reset`, `config --no-env-resolution`), плюс отдельный локальный Python-образ для трёх интеграционных сервисов.
+**Prerequisites:** Docker Engine и Docker Compose v2 с поддержкой `!override`, `!reset`, `service_completed_successfully`, `config --no-env-resolution`. Локально собранный Python 3.12+ образ для `outbox-dispatcher`/`receipt-adapter`/`inbox-reconciler` — тот же Dockerfile, который собирает Compose, никаких отдельных шагов не требуется.
+
+**Команда запуска:**
 
 ```bash
 docker compose up -d --build
 ```
 
-`cli` применяет миграции и публикует/активирует обе payment-карты (`payment-processing`, `payment-review`) через `entrypoint.sh` до старта `api`/worker'ов/Python-сервисов. Проверка доступности:
+**Что делает `cli` при старте.** `cli` — one-shot сервис с entrypoint `Cli/entrypoint.sh`. Он применяет миграции (`migration apply /app/Migrations/ChecksummedMigrations`) и публикует/активирует обе payment-карты (`payment-processing` v1, `payment-review` v1), после чего успешно завершается (`exit 0`). Только после этого поднимаются `api`, `worker-a`, `worker-b`, `outbox-dispatcher`, `receipt-adapter`, `inbox-reconciler` — через `depends_on: cli: condition: service_completed_successfully`.
+
+**Адрес и ожидаемый результат.**
+
+`gateway` — единственный сервис, публикующий host-порт (по умолчанию `127.0.0.1:8080`). Python-сервисы и `provider-simulator` host-портов не публикуют.
 
 ```bash
-curl http://localhost:8080/health/live
-curl http://localhost:8080/health/ready
+curl -fsS http://localhost:8080/health/live    # → HTTP 200
+curl -fsS http://localhost:8080/health/ready   # → HTTP 200
 ```
 
-Перед повторным запуском/проверкой:
+`ready = 200` означает, что `postgres`, `api`, `cli`, `gateway` готовы, а миграции и обе flow-карты применены. `gateway` доступен по адресу `http://localhost:8080`.
+
+Перед повторным запуском/проверкой — как и раньше:
 
 ```bash
 docker compose down -v
@@ -110,7 +133,9 @@ payment-review:
 
 ### Миграции
 
-Продолжают лексикографическую нумерацию `Api/Migrations/ChecksummedMigrations/` (SHA-256 checksum в `course.migration_history`, каждая — своя транзакция). Неделя 3 добавляет:
+**Когда и каким сервисом применяются.** Миграции применяет **только** сервис `cli` (entrypoint `Cli/entrypoint.sh`) при каждом `docker compose up -d --build`. Применение идемпотентно: уже применённые файлы (с совпадающим SHA-256 checksum в `course.migration_history`) пропускаются. Другие сервисы миграции не применяют — `api`, `worker-a`, `worker-b`, Python-сервисы зависят от `cli` через `depends_on: cli: condition: service_completed_successfully`.
+
+Порядок применения — лексикографический по имени файла в `Api/Migrations/ChecksummedMigrations/`; каждая миграция выполняется в **своей транзакции**. Файлы продолжают нумерацию недель 1–2, неделя 3 добавляет:
 
 | Файл | Содержимое |
 |---|---|
@@ -123,6 +148,8 @@ payment-review:
 | `016_revoke_execute_public_v2.sql` | Отзыв `EXECUTE FROM PUBLIC` по схемам `course`/`delivery`/`workflow`/`api`/`opencheck`/`public` (включая `pgcrypto`) с точечным re-grant только нужных `delivery`-функций ролям `outbox_dispatcher`/`inbox_reconciler` |
 
 Пароли ролей `outbox_dispatcher`/`inbox_reconciler` не хардкодятся в миграции — выставляются в `postgres-init/00-bootstrap-roles.sh` (по аналогии с `course_migrator`/`course_publisher`), чтобы совпадать с синтетическими `COURSE_OUTBOX_PASSWORD`/`COURSE_INBOX_PASSWORD` checker'а и не светиться нигде, кроме `postgres` и соответствующего Python-сервиса.
+
+Ручной запуск (если нужно применить миграции без `up`):
 
 ```bash
 docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigrations
@@ -158,50 +185,6 @@ docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigration
 | `COURSE_TEST_PROFILE` | все сервисы | Укороченные интервалы/тестовый профиль |
 
 `.env` с реальными секретами не входит в Git.
-
----
-
-### Тесты
-
-Python-периметр покрыт `pytest` (без Docker, юнит- и интеграционные тесты в `python/tests/`):
-
-- `test_hmac.py` — корректность HMAC-подписи над compact JSON с sorted keys;
-- `test_adapter.py` — перевод legacy callback в receipt v1, отклонение wrong capability/invalid JSON/large body/CRLF/unknown fields;
-- `test_dispatcher.py` — claim/succeed/fail цикл outbox-dispatcher, классификация ответов provider (retryable/terminal), сохранение idempotency key между retry;
-- `test_integration.py` — сквозной прогон периметра (dispatcher → adapter → receipt v1 → HMAC → duplicate/conflict сценарии).
-
-Один раз поставить зависимости в venv:
-
-```bash
-cd ~/projects/week
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-Запуск тестов:
-
-```bash
-source .venv/bin/activate
-python -m pytest python/tests -v
-```
-
-Если venv не активирован и системный `python3` не находит `pytest`, используйте интерпретатор из venv напрямую:
-
-```bash
-~/projects/week/.venv/bin/python -m pytest python/tests -v
-```
-
-Полезные варианты:
-
-```bash
-python -m pytest python/tests            # краткий вывод
-python -m pytest python/tests -v -s      # с stdout/stderr
-python -m pytest python/tests -v -x      # остановиться на первом падении
-python -m pytest python/tests/test_hmac.py -v
-```
-
-C#-тесты (`Cli.Tests`, `Api.Tests`) — без изменений в контракте команды запуска, см. [TESTS.md](TESTS.md).
 
 ---
 
@@ -251,24 +234,99 @@ docker compose down -v   # освободить порт и убрать сос�
 
 ---
 
+### Собственные тесты
+
+Python-периметр покрыт `pytest` (без Docker, юнит- и интеграционные тесты в `python/tests/`):
+
+- `test_hmac.py` — корректность HMAC-подписи над compact JSON с sorted keys;
+- `test_adapter.py` — перевод legacy callback в receipt v1, отклонение wrong capability/invalid JSON/large body/CRLF/unknown fields;
+- `test_dispatcher.py` — claim/succeed/fail цикл outbox-dispatcher, классификация ответов provider (retryable/terminal), сохранение idempotency key между retry;
+- `test_integration.py` — сквозной прогон периметра (dispatcher → adapter → receipt v1 → HMAC → duplicate/conflict сценарии).
+
+Один раз поставить зависимости в venv:
+
+```bash
+cd ~/projects/week
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Запуск тестов:
+
+```bash
+source .venv/bin/activate
+python -m pytest python/tests -v
+```
+
+Если venv не активирован и системный `python3` не находит `pytest`, используйте интерпретатор из venv напрямую:
+
+```bash
+~/projects/week/.venv/bin/python -m pytest python/tests -v
+```
+
+Полезные варианты:
+
+```bash
+python -m pytest python/tests            # краткий вывод
+python -m pytest python/tests -v -s      # с stdout/stderr
+python -m pytest python/tests -v -x      # остановиться на первом падении
+python -m pytest python/tests/test_hmac.py -v
+```
+
+C#-тесты (`Cli.Tests`, `Api.Tests`) — без изменений в контракте команды запуска, см. [TESTS.md](TESTS.md).
+
+---
+
 ### Диагностика
+
+**Логи сервисов:**
 
 ```bash
 docker compose logs outbox-dispatcher
 docker compose logs receipt-adapter
 docker compose logs inbox-reconciler
 docker compose logs api
+docker compose logs worker-a
+docker compose logs worker-b
+docker compose logs gateway
 docker compose logs cli
+```
 
-curl http://localhost:8080/health/live
-curl http://localhost:8080/health/ready
+**Health (`gateway`):**
 
+```bash
+curl -fsS http://localhost:8080/health/live
+curl -fsS http://localhost:8080/health/ready
+```
+
+**OpenAPI (generic action runtime):**
+
+```bash
+curl -fsS http://localhost:8080/openapi/default.json | head
+curl -fsS http://localhost:8080/openapi/actions/payment/request/1.json | head
+```
+
+**PostgreSQL (read-only autocheck views + диагностика):**
+
+```bash
 docker compose exec postgres psql -U postgres -d course
+# примеры:
+docker compose exec postgres psql -U postgres -d course -c \
+  "SELECT * FROM autocheck.receipts ORDER BY received_at DESC LIMIT 5;"
+docker compose exec postgres psql -U postgres -d course -c \
+  "SELECT * FROM autocheck.decisions ORDER BY created_at DESC LIMIT 5;"
+docker compose exec postgres psql -U postgres -d course -c \
+  "SELECT * FROM autocheck.outbox ORDER BY created_at DESC LIMIT 5;"
+```
 
-# one-shot cli: exec не работает, только run --rm
+**CLI (one-shot, `exec` не работает — только `run --rm`):**
+
+```bash
 docker compose run --rm -T --no-deps cli action list
 docker compose run --rm -T --no-deps cli action publish /app/<manifest>.json
 docker compose run --rm -T --no-deps cli flow list
+docker compose run --rm -T --no-deps cli migration apply /app/Migrations/ChecksummedMigrations
 ```
 
 Автосводки по периметру — через read-only views `autocheck.receipts`/`autocheck.decisions` (см. «Миграции») в дополнение к `autocheck.processes`/`autocheck.steps`/`autocheck.jobs`/`autocheck.attempts` недели 2.
