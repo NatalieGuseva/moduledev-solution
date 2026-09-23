@@ -543,12 +543,13 @@ ALTER FUNCTION workflow.get_process(JSONB, JSONB) OWNER TO course_owner;
 
 -- Defense-in-depth по образцу 004_revoke_execute_public.sql: по
 -- умолчанию PostgreSQL выдаёт EXECUTE роли PUBLIC при CREATE FUNCTION.
--- Отзываем сразу здесь же, не откладывая до отдельной миграции —
--- иначе между применением 007 и гипотетической будущей "миграцией
--- с правами" любая роль с доступом к БД могла бы дёргать эти функции
--- напрямую.
+-- REVOKE/ALTER DEFAULT PRIVILEGES требуют владения схемой — переключаемся
+-- на course_owner (course_migrator — её член с ADMIN OPTION, см.
+-- postgres-init/00-bootstrap-roles.sh).
+SET ROLE course_owner;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA workflow FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA workflow REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+RESET ROLE;
 
 -- workflow_worker получает EXECUTE ровно на четыре функции, как
 -- прямо требует 04_assignment.md, и ни на что больше — ни на
@@ -561,14 +562,3 @@ GRANT EXECUTE ON FUNCTION workflow.claim_jobs(TEXT, INTEGER, INTEGER) TO workflo
 GRANT EXECUTE ON FUNCTION workflow.finish_job(UUID, TEXT, BIGINT, TEXT, JSONB) TO workflow_worker;
 GRANT EXECUTE ON FUNCTION workflow.fail_job(UUID, TEXT, BIGINT, TEXT, BOOLEAN) TO workflow_worker;
 GRANT EXECUTE ON FUNCTION api.invoke(TEXT, TEXT, INTEGER, JSONB, JSONB) TO workflow_worker;
-
-COMMENT ON FUNCTION workflow.enter_step(UUID, TEXT) IS
-    'Внутренний helper: создаёт step_instance для шага, переводит process в соответствующее состояние, при AUTOMATIC создаёт job, при WAIT_SIGNAL применяет уже накопленный ACCEPTED-сигнал';
-COMMENT ON FUNCTION workflow.claim_jobs(TEXT, INTEGER, INTEGER) IS
-    'Захват до p_limit готовых job короткой транзакцией (FOR UPDATE SKIP LOCKED), возвращает всё нужное shared ActionExecutor одним вызовом';
-COMMENT ON FUNCTION workflow.finish_job(UUID, TEXT, BIGINT, TEXT, JSONB) IS
-    'Фиксация успешного исхода job: принимается только при точном совпадении job_id/owner/lease_version/state';
-COMMENT ON FUNCTION workflow.fail_job(UUID, TEXT, BIGINT, TEXT, BOOLEAN) IS
-    'Фиксация неуспешного исхода job: DEAD при исчерпании попыток или non-retryable ошибке, иначе RETRY_WAIT по delays_ms';
-COMMENT ON FUNCTION workflow.get_process(JSONB, JSONB) IS
-    'Target-функция для action workflow.get: снимок process + steps + jobs + attempts по processId';

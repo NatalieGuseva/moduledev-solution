@@ -6,23 +6,21 @@ services:
     container_name: moduldev-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${COURSE_POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-course}
+      # Пароли для LOGIN-ролей, которые создаёт
+      # postgres-init/00-bootstrap-roles.sh при первой инициализации тома.
+      # Роли course_runtime и workflow_worker тоже заводятся там — до этого
+      # они либо отсутствуют, либо NOLOGIN (создаются миграциями 001/005
+      # как NOLOGIN, поэтому bootstrap-скрипт явно даёт им LOGIN и пароль).
       COURSE_MIGRATOR_PASSWORD: ${COURSE_MIGRATOR_PASSWORD:-course_migrator_pw}
       COURSE_PUBLISHER_PASSWORD: ${COURSE_PUBLISHER_PASSWORD:-course_publisher_pw}
-      # TODO(checker): docs/configuration.md требует COURSE_RUNTIME_PASSWORD
-      # для postgres+api и COURSE_WORKER_PASSWORD для postgres+workers.
-      # Пока НЕ прокидываю их сюда, потому что не видел Cli/ — неясно,
-      # кто именно ставит пароль ролям course_runtime/workflow_worker
-      # (00-bootstrap-roles.sh их не создаёт; это делают миграции или cli).
-      # После проверки Cli/ добавить сюда:
-      #   COURSE_RUNTIME_PASSWORD: ${COURSE_RUNTIME_PASSWORD:-course_runtime_pw}
-      #   COURSE_WORKER_PASSWORD: ${COURSE_WORKER_PASSWORD:-workflow_worker_pw}
+      COURSE_RUNTIME_PASSWORD: ${COURSE_RUNTIME_PASSWORD:-course_runtime_pw}
+      COURSE_WORKER_PASSWORD: ${COURSE_WORKER_PASSWORD:-workflow_worker_pw}
       COURSE_OUTBOX_PASSWORD: ${COURSE_OUTBOX_PASSWORD:-outbox_dispatcher_pw}
       COURSE_INBOX_PASSWORD: ${COURSE_INBOX_PASSWORD:-inbox_reconciler_pw}
     volumes:
       - course_pgdata:/var/lib/postgresql/data
-     
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-course}"]
       interval: 10s
@@ -39,17 +37,18 @@ services:
     container_name: moduldev-cli
     restart: "no"
     environment:
-      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}
+      # cli делает и migration apply (entrypoint.sh), и action/flow publish
+      # по прямому запросу checker'а. Ему нужна одна строка подключения,
+      # покрывающая обе роли, — course_migrator покрывает всё (CREATEROLE +
+      # владелец БД), а course_publisher имеет только точечный DML.
+      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=course_migrator;Password=${COURSE_MIGRATOR_PASSWORD:-course_migrator_pw}
       - COURSE_JWT_ISSUER=${COURSE_JWT_ISSUER}
       - COURSE_JWT_AUDIENCE=${COURSE_JWT_AUDIENCE}
       - COURSE_JWT_SIGNING_KEY=${COURSE_JWT_SIGNING_KEY}
-      # TODO(checker): по таблице переменная должна называться
-      # COURSE_WORKER_PASSWORD. Сейчас cli читает
-      # COURSE_WORKFLOW_WORKER_PASSWORD (см. лог "password set from
-      # COURSE_WORKFLOW_WORKER_PASSWORD"). Перед переименованием
-      # убедиться, что Cli/Program.cs действительно ждёт новое имя —
-      # иначе роль workflow_worker останется со старым паролем.
-      - COURSE_WORKFLOW_WORKER_PASSWORD=${COURSE_WORKFLOW_WORKER_PASSWORD:-workflow_worker_pw}
+      # Cli/Program.cs читает это имя, чтобы выставить пароль роли
+      # workflow_worker при bootstrap (ALTER ROLE ... WITH LOGIN PASSWORD).
+      # postgres-init тоже создаёт эту роль с паролем COURSE_WORKER_PASSWORD —
+      # оба идемпотентны, значения совпадают.
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
     depends_on:
       postgres:
@@ -76,13 +75,9 @@ services:
       - COURSE_JWT_AUDIENCE=${COURSE_JWT_AUDIENCE}
       - COURSE_JWT_SIGNING_KEY=${COURSE_JWT_SIGNING_KEY}
       - PROVIDER_HMAC_SECRET=${PROVIDER_HMAC_SECRET}
-      # TODO(checker): docs/configuration.md требует, чтобы api ходил под
-      # least-privilege course_runtime, а не под суперпользователем postgres.
-      # Но пока cli/init не подтверждены как источник пароля для
-      # course_runtime — оставляю как есть, иначе api не поднимется.
-      # После проверки Cli/ заменить на:
-      #   Username=course_runtime;Password=${COURSE_RUNTIME_PASSWORD:-course_runtime_pw}
-      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}
+      # api ходит под least-privilege ролью course_runtime (docs/configuration.md).
+      # Роль создаётся postgres-init с LOGIN и паролем COURSE_RUNTIME_PASSWORD.
+      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=course_runtime;Password=${COURSE_RUNTIME_PASSWORD:-course_runtime_pw}
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
     expose:
       - "8080"
@@ -121,7 +116,7 @@ services:
       dockerfile: Workflow.Worker/Dockerfile
     container_name: moduldev-worker-a
     environment:
-      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=workflow_worker;Password=${COURSE_WORKFLOW_WORKER_PASSWORD:-workflow_worker_pw}
+      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=workflow_worker;Password=${COURSE_WORKER_PASSWORD:-workflow_worker_pw}
       - COURSE_INSTANCE_ID=worker-a
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
       - COURSE_FAILPOINT=${COURSE_FAILPOINT:-}
@@ -141,7 +136,7 @@ services:
       dockerfile: Workflow.Worker/Dockerfile
     container_name: moduldev-worker-b
     environment:
-      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=workflow_worker;Password=${COURSE_WORKFLOW_WORKER_PASSWORD:-workflow_worker_pw}
+      - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=workflow_worker;Password=${COURSE_WORKER_PASSWORD:-workflow_worker_pw}
       - COURSE_INSTANCE_ID=worker-b
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
       - COURSE_FAILPOINT=${COURSE_FAILPOINT:-}
@@ -187,11 +182,6 @@ services:
       - PROVIDER_CALLBACK_TOKEN=${PROVIDER_CALLBACK_TOKEN}
       - PROVIDER_HMAC_SECRET=${PROVIDER_HMAC_SECRET}
       - RECEIPT_API_URL=${RECEIPT_API_URL:-http://gateway:8080/api/receipt/accept}
-      # FIX: adapter теперь слушает 8080 (см. receipt_adapter.py,
-      # RECEIPT_ADAPTER_PORT с дефолтом 8080). Это совпадает с
-      # CALLBACK_URL у provider-simulator'а
-      # (http://receipt-adapter:8080/callbacks/...), и provider
-      # больше не получает "connection refused".
       - RECEIPT_ADAPTER_PORT=8080
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
     depends_on:
@@ -226,11 +216,6 @@ services:
     environment:
       - CALLBACK_URL=http://receipt-adapter:8080/callbacks/provider-v02/${PROVIDER_CALLBACK_CAPABILITY}
       - AUDIT_TOKEN=${PROVIDER_AUDIT_TOKEN:-audit_token_123}
-      # FIX: PROVIDER_CALLBACK_TOKEN здесь НЕ нужен — по
-      # docs/external-contracts.md provider v0.2.0 шлёт legacy callback
-      # без токена и без HMAC; токен используется только adapter'ом
-      # как Authorization: Bearer <PROVIDER_CALLBACK_TOKEN> при вызове
-      # gateway. В прошлой версии я ошибочно добавил его сюда — убрано.
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
     networks:
       - moduldev-network

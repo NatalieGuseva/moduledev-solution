@@ -445,138 +445,126 @@ class Program
 
     private static async Task<int> HandleMigrationCommand(string[] args)
     {
-
-    if (args.Length == 0)
-    {
-        Console.Error.WriteLine("Usage: cli migration apply <migrations_path>");
-        return 1;
-    }
-
-    var subcommand = args[0];
-
-    if (subcommand != "apply")
-    {
-        Console.Error.WriteLine($"Unknown migration subcommand: {subcommand}");
-        return 1;
-    }
-
-    if (args.Length < 2)
-    {
-        Console.Error.WriteLine("Usage: cli migration apply <migrations_path>");
-        return 1;
-    }
-
-    var migrationsPath = args[1];
-
-    if (!Directory.Exists(migrationsPath))
-    {
-        Console.Error.WriteLine($"Migrations directory not found: {migrationsPath}");
-        return 1;
-    }
-
-    var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__CourseDb")
-        ?? throw new InvalidOperationException("Connection string not found");
-
-    await using var connection = new NpgsqlConnection(connectionString);
-    await connection.OpenAsync();
-
-    await connection.ExecuteAsync("CREATE SCHEMA IF NOT EXISTS course");
-
-    await connection.ExecuteAsync(@"
-        CREATE TABLE IF NOT EXISTS course.migration_history (
-            id SERIAL PRIMARY KEY,
-            migration_name TEXT NOT NULL UNIQUE,
-            checksum TEXT NOT NULL,
-            applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        )");
-
-    var files = Directory.GetFiles(migrationsPath, "*.sql")
-        .OrderBy(f => Path.GetFileName(f))
-        .ToList();
-
-    var applied = new List<string>();
-    var skipped = new List<string>();
-
-    foreach (var file in files)
-    {
-        var fileName = Path.GetFileName(file);
-        var content = await File.ReadAllTextAsync(file);
-        var checksum = ComputeChecksum(content);
-
-        var existing = await connection.QueryFirstOrDefaultAsync<MigrationRecord>(
-            "SELECT * FROM course.migration_history WHERE migration_name = @name",
-            new { name = fileName });
-
-        if (existing != null)
+        if (args.Length == 0)
         {
-            if (existing.Checksum != checksum)
+            Console.Error.WriteLine("Usage: cli migration apply <migrations_path>");
+            return 1;
+        }
+
+        var subcommand = args[0];
+
+        if (subcommand != "apply")
+        {
+            Console.Error.WriteLine($"Unknown migration subcommand: {subcommand}");
+            return 1;
+        }
+
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("Usage: cli migration apply <migrations_path>");
+            return 1;
+        }
+
+        var migrationsPath = args[1];
+
+        if (!Directory.Exists(migrationsPath))
+        {
+            Console.Error.WriteLine($"Migrations directory not found: {migrationsPath}");
+            return 1;
+        }
+
+        var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__CourseDb")
+            ?? throw new InvalidOperationException("Connection string not found");
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+
+        await connection.ExecuteAsync("CREATE SCHEMA IF NOT EXISTS course");
+
+        await connection.ExecuteAsync(@"
+            CREATE TABLE IF NOT EXISTS course.migration_history (
+                id SERIAL PRIMARY KEY,
+                migration_name TEXT NOT NULL UNIQUE,
+                checksum TEXT NOT NULL,
+                applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )");
+
+        var files = Directory.GetFiles(migrationsPath, "*.sql")
+            .OrderBy(f => Path.GetFileName(f))
+            .ToList();
+
+        var applied = new List<string>();
+        var skipped = new List<string>();
+
+        foreach (var file in files)
+        {
+            var fileName = Path.GetFileName(file);
+            var content = await File.ReadAllTextAsync(file);
+            var checksum = ComputeChecksum(content);
+
+            var existing = await connection.QueryFirstOrDefaultAsync<MigrationRecord>(
+                "SELECT * FROM course.migration_history WHERE migration_name = @name",
+                new { name = fileName });
+
+            if (existing != null)
             {
-                Console.Error.WriteLine($"Migration file changed after being applied: {fileName}");
-                var error = new
+                if (existing.Checksum != checksum)
                 {
-                    status = "error",
-                    code = "manifest.conflict",
-                    message = $"migration file changed after being applied: {fileName}",
-                    meta = new { contractVersion = "course-1" }
-                };
-                Console.WriteLine(JsonSerializer.Serialize(error));
-                return 1;
+                    Console.Error.WriteLine($"Migration file changed after being applied: {fileName}");
+                    var error = new
+                    {
+                        status = "error",
+                        code = "manifest.conflict",
+                        message = $"migration file changed after being applied: {fileName}",
+                        meta = new { contractVersion = "course-1" }
+                    };
+                    Console.WriteLine(JsonSerializer.Serialize(error));
+                    return 1;
+                }
+                skipped.Add(fileName);
+                continue;
             }
-            skipped.Add(fileName);
-            continue;
+
+            await connection.ExecuteAsync(content);
+            await connection.ExecuteAsync(
+                "INSERT INTO course.migration_history (migration_name, checksum) VALUES (@name, @checksum)",
+                new { name = fileName, checksum });
+
+            applied.Add(fileName);
+            Console.Error.WriteLine($"applying {fileName}");
         }
 
-        await connection.ExecuteAsync(content);
-        await connection.ExecuteAsync(
-            "INSERT INTO course.migration_history (migration_name, checksum) VALUES (@name, @checksum)",
-            new { name = fileName, checksum });
+        // Раньше здесь был ALTER ROLE workflow_worker WITH LOGIN PASSWORD ... —
+        // но cli теперь подключается под course_migrator (см. docker-compose.yml),
+        // а workflow_worker создаётся с LOGIN и паролем в
+        // postgres-init/00-bootstrap-roles.sh под postgres. course_migrator не
+        // владеет этой ролью и не может её ALTER — вызов падал с
+        // 42501 "permission denied to alter role" ПОСЛЕ успешного применения
+        // всех миграций, ломая exit code cli. Роль уже настроена bootstrap-
+        // скриптом, ничего доделывать здесь не нужно.
 
-        applied.Add(fileName);
-        Console.Error.WriteLine($"applying {fileName}");
-    }
-
-    // workflow_worker создаётся в 005_workflow_schema.sql как NOLOGIN — под ней
-    // нельзя подключиться напрямую, и все её точечные GRANT/REVOKE ничего не
-    // значат, пока Workflow.Worker подключается тем же суперпользователем, что
-    // Api и Cli. Здесь (а не в самой миграции, потому что миграции — статичные
-    // .sql файлы без доступа к переменным окружения) даём роли реальный LOGIN
-    // и пароль из окружения, если он задан. ALTER ROLE идемпотентен — повторный
-    // прогон просто переустановит тот же пароль.
-    //
-    // ВАЖНО: outbox_dispatcher и inbox_reconciler сюда НЕ входят. Checker
-    // запрещает передавать их пароли в cli, поэтому эти роли создаются
-    // сразу с LOGIN в 010_delivery_schema.sql, а пароль — local-only
-    // placeholder в самой миграции.
-    var workflowWorkerPassword = Environment.GetEnvironmentVariable("COURSE_WORKFLOW_WORKER_PASSWORD");
-    if (!string.IsNullOrEmpty(workflowWorkerPassword))
-    {
-        var escaped = workflowWorkerPassword.Replace("'", "''");
-        await connection.ExecuteAsync($"ALTER ROLE workflow_worker WITH LOGIN PASSWORD '{escaped}'");
-        Console.Error.WriteLine("workflow_worker role is now LOGIN-capable (password set from COURSE_WORKFLOW_WORKER_PASSWORD)");
-    }
-
-    var result = new
-    {
-        status = "ok",
-        result = new
+        var result = new
         {
-            resource = "migration",
-            operation = "applied",
-            applied = applied,
-            skipped = skipped
-        },
-        meta = new
+            status = "ok",
+            result = new
+            {
+                resource = "migration",
+                operation = "applied",
+                applied = applied,
+                skipped = skipped
+            },
+            meta = new
+            {
+                contractVersion = "course-1"
+            }
+        };
+
+        Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions
         {
-            contractVersion = "course-1"
-        }
-    };
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        }));
 
-    Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    }));
-
-    return 0;
+        return 0;
     }
 
     private static string ComputeChecksum(string content)

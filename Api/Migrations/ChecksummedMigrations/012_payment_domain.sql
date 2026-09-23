@@ -808,5 +808,7 @@ COMMENT ON FUNCTION workflow.manual_decision(JSONB, JSONB) IS 'workflow.manual v
 -- только через api.invoke — тот же пробел, который 004 закрыла для
 -- api/course/opencheck, и 007 для workflow.
 -- ============================================================
+SET ROLE course_owner;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA payment FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA payment REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+RESET ROLE;

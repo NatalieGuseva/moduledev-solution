@@ -1,6 +1,12 @@
-# Неделя 2. Персистентное workflow-ядро
+# Неделя 3. Python-периметр
 
-Решение ModuleDev — Неделя 2: версионированные workflow maps, персистентное состояние в PostgreSQL, общий C# worker (`Workflow.Worker`), lease/fencing, ограниченный retry и восстановление после остановки worker. Продолжение задания недели 1 в этом же репозитории — action runtime не переписан, а используется воркером как есть.
+Решение ModuleDev — Неделя 3: durable-доставка Outbox во внешний provider через Python-dispatcher, приём provider callback через Python-adapter с переводом его в подписанный receipt v1, применение Inbox через Python-reconciler. Продолжение заданий недель 1–2 в этом же репозитории: C# gateway/API/worker и PostgreSQL-ядро workflow-движка не переписаны, Python не выбирает flow, лимит, переход или финальный статус — все решения остаются в PostgreSQL и C#.
+
+```
+Outbox -> Python dispatcher -> provider v0.2.0
+provider legacy callback -> Python adapter -> generic C# API -> Inbox
+Inbox -> Python reconciler -> workflow signal -> generic C# worker
+```
 
 ---
 
@@ -8,38 +14,33 @@
 
 ### Архитектура
 
-Решение состоит из **шести** сервисов в Docker Compose:
+К шести сервисам недели 2 (`gateway`, `api`, `cli`, `postgres`, `worker-a`, `worker-b`) добавляются:
 
-- **gateway** (ASP.NET Core, YARP) — единственная точка входа снаружи, публикует host-порт `8080`. Проксирует запросы во внутренний `api` по Compose DNS (`http://api:8080`), не содержит предметной логики и не имеет доступа к PostgreSQL.
-- **api** — внутренний action runtime без опубликованных host-портов. Выполняет проверку JWT, формирует доверенный context, валидирует request/response schema и вызывает `api.invoke(...)` в одной Npgsql transaction. Запускается только после того, как `cli` успешно применит миграции (`service_completed_successfully`).
-- **cli** — Course CLI. При `docker compose up` по умолчанию выполняет `migration apply` и завершается. Для остальных команд (публикация/активация actions и workflow maps, запуск процессов, сигналы) запускается вручную через `docker compose run --rm cli ...`. Пишет в stdout ровно один JSON-документ (envelope `status: ok|error`), диагностика — в stderr.
-- **postgres** — PostgreSQL 17, авторитетное состояние (схемы `course`, `api`, `workflow`, `training`, `autocheck`), данные хранятся в named volume `course_pgdata` и переживают пересоздание любого другого контейнера.
-- **worker-a** и **worker-b** — два экземпляра одного и того же образа `Workflow.Worker`, с разными `COURSE_INSTANCE_ID` (владелец лизинга). Опрашивают очередь готовых заданий (`workflow.claim_jobs`), выполняют автоматические шаги через тот же shared `ActionExecutor`, что и `api`, и продвигают процесс через `workflow.finish_job`/`fail_job`.
+- **outbox-dispatcher** — Python 3.12+, читает `delivery.outbox` через `delivery.claim_outbox(...)`, вызывает provider `POST` с `Idempotency-Key = externalRequestId`, результат фиксирует через `delivery.succeed_outbox(...)`/`delivery.fail_outbox(...)`. Без host-портов, роль в PostgreSQL — `outbox_dispatcher`, без прямого DML по предметным таблицам.
+- **receipt-adapter** — тот же Python-образ, другой entrypoint. Принимает provider legacy callback, собирает receipt v1 (compact JSON, sorted keys), считает `HMAC-SHA256` над точными UTF-8 байтами тела и вызывает `POST /api/receipt/accept` через `gateway` с JWT, `Idempotency-Key = messageId`, `X-Action-Version: 1` и `X-Provider-Signature: v1=<lowercase hex>`. Без database credentials — только HTTP наружу и внутрь периметра.
+- **inbox-reconciler** — тот же Python-образ, третий entrypoint. Применяет `delivery.reconcile_inbox(...)` и подтверждённые receipts, инициируя `workflow signal` для generic C# worker. Роль в PostgreSQL — `inbox_reconciler`, тоже без прямого DML.
+- **provider-simulator** — выданный образ `ghcr.io/fintech-dev-lab/internship-provider-simulator:v0.2.0`, закреплён по digest, наружу не публикуется. Контракт с provider — см. раздел «Provider».
 
-Направление вызовов для HTTP-actions: клиент → `gateway:8080` → `api` → JWT + context → resolve action manifest → Npgsql transaction → `api.invoke(...)` → зарегистрированная PostgreSQL-функция → commit/rollback.
-
-Направление вызовов для workflow: `cli flow start` → `workflow.start_process` → `workflow.enter_step` создаёт job → worker забирает его через `workflow.claim_jobs` → выполняет action через `ActionExecutor` → `workflow.finish_job` продвигает процесс на следующий шаг (или `workflow.fail_job` планирует retry/переводит в `DEAD`).
-
-Диаграмма: [C4 Container diagram](docs/c4-container.md)
+Диаграмма: [C4 Container diagram](docs/c4-container.md) (обновлена: добавлены `outbox-dispatcher`, `receipt-adapter`, `inbox-reconciler`, `provider-simulator`).
 
 ---
 
 ### Запуск
 
-Требования: Docker Desktop с Compose v2, поддерживающим `service_completed_successfully`, `!override`, `!reset` и `config --no-env-resolution` (нужен достаточно свежий Docker Desktop — если `./check.sh` падает на `compose-contract` с exit-кодом 125, в первую очередь проверьте `docker compose version` и обновите Docker Desktop).
+Требования те же, что на неделе 2 (Docker Desktop с Compose v2, поддерживающим `service_completed_successfully`, `!override`, `!reset`, `config --no-env-resolution`), плюс отдельный локальный Python-образ для трёх интеграционных сервисов.
 
 ```bash
 docker compose up -d --build
 ```
 
-`cli` применяет миграции автоматически при каждом чистом запуске, `api` и оба worker'а стартуют только после их успешного завершения. Проверка доступности:
+`cli` применяет миграции и публикует/активирует обе payment-карты (`payment-processing`, `payment-review`) через `entrypoint.sh` до старта `api`/worker'ов/Python-сервисов. Проверка доступности:
 
 ```bash
 curl http://localhost:8080/health/live
 curl http://localhost:8080/health/ready
 ```
 
-**Перед повторным запуском/проверкой** (в том числе перед `./check.sh`) обязательно гасите предыдущий стек, чтобы не занимать порт `8080` и не тащить состояние прошлого запуска:
+Перед повторным запуском/проверкой:
 
 ```bash
 docker compose down -v
@@ -47,97 +48,85 @@ docker compose down -v
 
 ---
 
-### Workflow-карты
+### Python-периметр
 
-Workflow map — исполняемый контракт процесса, а не документация: набор шагов (`automatic`/`wait_signal`/`manual`/`end`), объявленных `outcome` и переходов между ними по формату `contracts/course-1/workflow-map.schema.json`. Карта — конечный автомат: экземпляр процесса в любой момент находится ровно на одном шаге, переход возможен только по заранее объявленному результату.
+SQL-контракт, которым Python обязан пользоваться (никакого прямого DML по `delivery`/`payment`/`workflow` таблицам):
 
-Жизненный цикл управляется через `cli flow ...` (каждая команда — отдельный `docker compose run --rm cli flow ...`):
-
-| Команда | Назначение |
+| Функция | Назначение |
 |---|---|
-| `flow validate <map.json\|map.yaml>` | Семантическая проверка карты без записи в БД: достижимость всех шагов, хотя бы один достижимый `end`, отсутствие циклов и тупиков, точное соответствие `required_policy` и outcome'ов зарегистрированному action |
-| `flow publish <map.json\|map.yaml>` | Публикация версии карты. Идемпотентна: повторная публикация с тем же содержимым (в т.ч. тем же документом в другом формате) — не ошибка, с другим содержимым той же версии — `manifest.conflict` |
-| `flow list` | Список опубликованных версий карт и их статус активности |
-| `flow activate <flow> --version <v>` | Переключение активной версии; новые процессы стартуют по ней, уже идущие — по своей закреплённой (pinned) версии |
-| `flow start <flow> --business-key <key> [--data <file>]` | Запуск процесса. Идемпотентен по паре (flow, business-key): повтор с теми же данными возвращает тот же процесс, с другими — конфликт |
-| `flow get <process-id>` | Компактный статус процесса (шаг, состояние) |
-| `flow signal <process-id> --type <type> --message-id <id> --payload <file>` | Внешний сигнал для шага `wait_signal`. Дедупликация по `message-id`; сигнал для ещё не наступившего `wait_signal` сохраняется и применяется атомарно при входе в него |
+| `delivery.claim_outbox(worker_id, batch_size)` | Забрать пачку готовых к отправке записей Outbox; один claim → одна HTTP-попытка |
+| `delivery.succeed_outbox(id, provider_payment_id, attempt, response)` | Зафиксировать успешную доставку; не регрессирует уже `CONFIRMED` запись |
+| `delivery.fail_outbox(id, error_code, attempt, response)` | Зафиксировать неуспешную попытку, PostgreSQL сам решает retry/next attempt |
+| `delivery.reconcile_inbox(batch_size)` | Применить необработанные записи Inbox |
 
-Формат карты (JSON или YAML) не завязан на расширение файла: `cli` сначала пробует разобрать содержимое как JSON, и только если это не JSON по синтаксису — как YAML (актуально в том числе для `/dev/stdin`, где расширения нет). В обоих случаях действует одна и та же строгая проверка схемы (неизвестные поля отклоняются), поэтому семантически одинаковая карта в JSON и в YAML — это один и тот же документ с точки зрения `flow publish`.
-
-Версия карты фиксируется в момент старта процесса (`flowVersion` в `workflow.process_instance`) — публикация новой версии не затрагивает уже идущие процессы.
-
-Отдельный HTTP-action `workflow.get` (module=`workflow`, action=`get`, policy `workflow:read`) отдаёт снимок процесса вместе с шагами, заданиями и попытками — тот же путь `Gateway → Api → api.invoke`, что и обычные actions недели 1.
-
-**Файлы карт не монтируются в контейнер `cli`** (никаких bind-mount'ов в `docker-compose.yml` — это осознанно, см. «Ограничения»), поэтому передавайте их через stdin с флагом `-T` (иначе `docker compose run` портит поток при пайпе):
-
-```bash
-cat contracts/course-1/maps/workflow-smoke-v1.flow.json | docker compose run --rm -T cli flow validate /dev/stdin
-cat contracts/course-1/maps/workflow-smoke-v1.flow.json | docker compose run --rm -T cli flow publish /dev/stdin
-```
-
-`--data`/`--payload` у `flow start`/`flow signal` работают так же — это тоже путь к файлу, а не inline JSON, поэтому для передачи данных без монтирования volume используется тот же приём:
-
-```bash
-echo '{"value": 42}' | docker compose run --rm -T cli flow start workflow-smoke --business-key smoke-1 --data /dev/stdin
-```
-
-#### Тестовый action и smoke-карты
-
-`training.canary` (module=`training`, action=`canary`, policy `workflow:execute`) — минимальная идемпотентная PostgreSQL-функция без предметной сложности, специально для демонстрации workflow-движка без завязки на `payment.request`/`operation.get`. Идемпотентность — по `request_id` (= `executionId` job'а) через `ON CONFLICT DO NOTHING` в `training.canary_log`; регистрация — `010_insert_training_canary_action.sql`.
-
-На ней построены три карты в `contracts/course-1/maps/`:
-
-| Карта | Путь | Демонстрирует |
-|---|---|---|
-| `workflow-smoke`, v1 | `workflow-smoke-v1.flow.json` | `automatic → wait_signal → end`; сигнал `training.completed`, исход `COMPLETED` |
-| `workflow-smoke`, v2 | `workflow-smoke-v2.flow.json` | Тот же скелет, но сигнал `training.completed_v2` и исход `COMPLETED_V2` — наблюдаемое отличие поведения от v1, используется для проверки version pinning |
-| `workflow-smoke-manual-wait`, v1 | `workflow-smoke-manual-wait-v1.flow.json` | `automatic → manual → end`; достижимость `WAITING_MANUAL` (завершение `manual` по HTTP — неделя 3, здесь не требуется) |
-
-Полный прогон, включая проверку pinning (старый процесс не переезжает на новую активную версию):
-
-```bash
-cat contracts/course-1/maps/workflow-smoke-v1.flow.json | docker compose run --rm -T cli flow publish /dev/stdin
-docker compose run --rm cli flow activate workflow-smoke --version 1
-echo '{"value": 42}' | docker compose run --rm -T cli flow start workflow-smoke --business-key smoke-1 --data /dev/stdin
-docker compose run --rm cli flow get <processId>          # WAITING_SIGNAL, currentStepKey: wait_result
-
-docker compose run --rm cli flow signal <processId> --type training.completed --message-id sig-1 --payload /dev/null
-docker compose run --rm cli flow get <processId>          # COMPLETED
-
-cat contracts/course-1/maps/workflow-smoke-v2.flow.json | docker compose run --rm -T cli flow publish /dev/stdin
-docker compose run --rm cli flow activate workflow-smoke --version 2
-echo '{"value": 7}' | docker compose run --rm -T cli flow start workflow-smoke --business-key smoke-2 --data /dev/stdin
-docker compose run --rm cli flow get <newProcessId>        # WAITING_SIGNAL, ждёт training.completed_v2 (не v1-сигнал)
-
-cat contracts/course-1/maps/workflow-smoke-manual-wait-v1.flow.json | docker compose run --rm -T cli flow publish /dev/stdin
-docker compose run --rm cli flow activate workflow-smoke-manual-wait --version 1
-echo '{"value": 1}' | docker compose run --rm -T cli flow start workflow-smoke-manual-wait --business-key manual-1 --data /dev/stdin
-docker compose run --rm cli flow get <manualProcessId>     # WAITING_MANUAL
-```
+Retry сохраняет key/body/correlation между попытками — состояние и момент следующей попытки считает PostgreSQL, а не Python-процесс.
 
 ---
 
-### Worker
+### Provider
 
-`Workflow.Worker` — общий C#-исполнитель automatic-шагов, запускается как `worker-a` и `worker-b` из одного образа с разными `COURSE_INSTANCE_ID`.
+Один локальный Python-образ, три entrypoint'а (`dispatcher`/`adapter`/`reconciler`, см. `docker-compose.yml`), контракт с provider v0.2.0 — по [external-contracts.md](docs/external-contracts.md) задания:
 
-Цикл на каждой итерации:
+- Запрос dispatcher → provider: `{"operationId": "<externalRequestId>", "amount": "1000.00", "currency": "RUB"}`, `Idempotency-Key = externalRequestId`.
+- Callback provider → adapter (legacy v0.2.0, без токена и без HMAC): `{"providerPaymentId", "operationId", "result", "message", "occurredAt"}`, приходит на `receipt-adapter:8080/callbacks/provider-v02/<PROVIDER_CALLBACK_CAPABILITY>`.
+- Receipt v1, который adapter кладёт в тело `POST /api/receipt/accept` через `gateway`: `{"externalRequestId", "messageId", "occurredAt", "outcome", "providerPaymentId", "version": 1}`, сериализован compact JSON с sorted keys, подписан `HMAC-SHA256` над точными UTF-8 байтами тела, передаётся как `X-Provider-Signature: v1=<lowercase hex>` вместе с JWT, `Idempotency-Key = messageId` и `X-Action-Version: 1`.
 
-1. `workflow.claim_jobs(owner, batchSize, leaseSeconds)` — короткая транзакция, `FOR UPDATE SKIP LOCKED`, гарантирует, что два worker'а не возьмут одно и то же задание.
-2. Собирает payload для action по `input_mapping`/`input_constants` из данных процесса (JSON Pointer). Если источник в mapping отсутствует — не вызывает action вообще, сразу `workflow.fail_job` с non-retryable `workflow.mapping_missing`.
-3. Вызывает **тот же** `Common.ActionExecution.ActionExecutor`, что использует `api` — с `trustedContext.principal = "workflow-worker"` и `RequestId = executionId` (идемпотентность на уровне action не завязана на HTTP `Idempotency-Key`).
-4. При успехе — `workflow.finish_job` в той же транзакции, что и сам action, затем commit. При неуспехе — rollback транзакции action, затем `workflow.fail_job` уже в отдельной транзакции: не исчерпан бюджет попыток и ошибка retryable → `RETRY_WAIT` с задержкой из `delays_ms`; иначе → `DEAD`, шаг и процесс переводятся в `FAILED`, пишется событие `TaskFailed`.
+Проверку подписи выполняет generic C# boundary (`ProviderSignatureMiddleware`) до входа в target action: он передаёт action'у только доверенные маркеры `transport.signatureVerified`/`transport.signatureVersion`, невалидная подпись до target не доходит. `provider-simulator` закреплён по digest (`ghcr.io/fintech-dev-lab/internship-provider-simulator:v0.2.0@sha256:...`), host-портов не публикует.
 
-Гарантии (подробное обоснование — [ADR 003](docs/003-lease-fencing-at-least-once.md)):
+---
 
-- **Lease/fencing** — `finish_job`/`fail_job` принимают запрос только при точном совпадении `job_id` + `owner` + `lease_version` + ожидаемого состояния `LEASED`. Просроченный, но ещё не переподхваченный лизинг не тратит бюджет попыток (попытка помечается `STALE`).
-- **Один предметный эффект** — `executionId` job'а не меняется между попытками одного и того же задания и используется как ключ идемпотентности при вызове action (дедупликация — на стороне целевой функции, `ON CONFLICT DO NOTHING`). Журнал диспетчеризации (`course.action_dispatches`) при этом умышленно **не** дедуплицируется по `executionId` — это append-only аудит попыток вызова, а не сам эффект; при reclaim на нём может быть больше одной строки на одну job, и это ожидаемое поведение at-least-once, а не дефект.
-- **Восстановление после recreate** — состояние процессов, заданий и история переходов живут в PostgreSQL, а не в памяти worker'а; после пересоздания контейнера worker продолжает разбирать очередь с нуля, не теряя прогресс уже идущих процессов.
+### Payment flows
 
-`workflow_worker` — отдельная ограниченная роль PostgreSQL (`LOGIN`, пароль из `COURSE_WORKFLOW_WORKER_PASSWORD`) без единого прямого `GRANT` на таблицы: только `EXECUTE` на `workflow.claim_jobs`, `workflow.finish_job`, `workflow.fail_job` и `api.invoke`. `api`/`cli` продолжают подключаться отдельной (более широкой) учётной записью — это разные роли с разным набором прав.
+`payment.submit` принимает только `operationId` и `Idempotency-Key`; привязка flow — server-side:
 
-**Test profile и failpoints** (`COURSE_TEST_PROFILE=1`, `COURSE_FAILPOINT=after_job_claim|after_action_before_finish`): при достижении заданной точки worker пишет одну строку `{"event":"failpoint.reached","name":"...","instanceId":"..."}` в stdout и блокируется до принудительной остановки — используется для проверки reclaim/stale-fencing сценариев. Для точечных fencing-проб без поднятия воркера доступна `cli flow test-finish <job-id> --owner <owner> --lease-version <v> --outcome <outcome> --result <file>` (только при `COURSE_TEST_PROFILE=1`, вызывает ту же production-границу `finish_job`, не отдельный бэкдор).
+- `PAYMENT_EXECUTION` → `payment-processing`
+- `PAYMENT_APPROVAL` → `payment-review`
+
+```
+payment-processing:
+  validate -> prepare_external -> wait_receipt -> apply_receipt
+    -> COMPLETED: complete -> end
+    -> REJECTED: reject -> end
+
+payment-review:
+  validate -> check_limit
+    -> WITHIN_LIMIT: approve -> end
+    -> REVIEW_REQUIRED: manual
+         -> APPROVED: approve -> end
+         -> REJECTED: reject -> end
+```
+
+Правило `course-limit-v1`: суммы до `100000.00 RUB` включительно — auto approve (`WITHIN_LIMIT`), выше — `REVIEW_REQUIRED` (шаг `manual`, реализованный ещё на неделе 2 как `wait_signal`/`manual`, на неделе 3 закрывается HTTP-завершением через `workflow.manual`).
+
+`workflow.manual` принимает `process`/`step`, `decision` и `reason`; idempotency-key берётся из HTTP-заголовка, principal — из доверенного context; decision, событие и следующий job фиксируются атомарно.
+
+---
+
+### Обязательные actions
+
+`payment.submit`, `operation.events`, `payment.validate`, `payment.prepare_external`, `payment.apply_receipt`, `payment.complete`, `payment.reject`, `payment.check_limit`, `payment.approve`, `receipt.accept`, `workflow.manual`.
+
+---
+
+### Миграции
+
+Продолжают лексикографическую нумерацию `Api/Migrations/ChecksummedMigrations/` (SHA-256 checksum в `course.migration_history`, каждая — своя транзакция). Неделя 3 добавляет:
+
+| Файл | Содержимое |
+|---|---|
+| `010_delivery_schema.sql` | Схема `delivery`: Outbox/Inbox таблицы, роли `outbox_dispatcher`/`inbox_reconciler` |
+| `011_delivery_functions.sql` | `delivery.claim_outbox`, `succeed_outbox`, `fail_outbox`, `reconcile_inbox` |
+| `012_payment_domain.sql` | Предметная схема `payment`: операции, decision, лимиты |
+| `013_insert_payment_actions.sql` | Регистрация обязательных `payment.*`/`receipt.accept`/`workflow.manual` actions в `course.action_catalog` |
+| `014_publisher_grants.sql` | Права публикации/активации новых payment-карт для роли `course_publisher` |
+| `015_autocheck_receipts_decisions.sql` | Views `autocheck.receipts` (из `delivery.inbox`) и `autocheck.decisions` (из `payment.decision`) |
+| `016_revoke_execute_public_v2.sql` | Отзыв `EXECUTE FROM PUBLIC` по схемам `course`/`delivery`/`workflow`/`api`/`opencheck`/`public` (включая `pgcrypto`) с точечным re-grant только нужных `delivery`-функций ролям `outbox_dispatcher`/`inbox_reconciler` |
+
+Пароли ролей `outbox_dispatcher`/`inbox_reconciler` не хардкодятся в миграции — выставляются в `postgres-init/00-bootstrap-roles.sh` (по аналогии с `course_migrator`/`course_publisher`), чтобы совпадать с синтетическими `COURSE_OUTBOX_PASSWORD`/`COURSE_INBOX_PASSWORD` checker'а и не светиться нигде, кроме `postgres` и соответствующего Python-сервиса.
+
+```bash
+docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigrations
+```
 
 ---
 
@@ -147,105 +136,172 @@ docker compose run --rm cli flow get <manualProcessId>     # WAITING_MANUAL
 
 | Переменная | Сервис | Назначение |
 |---|---|---|
-| `COURSE_JWT_ISSUER`, `COURSE_JWT_AUDIENCE`, `COURSE_JWT_SIGNING_KEY` | api | Проверка JWT |
+| `COURSE_GATEWAY_PORT` | gateway | Host-порт, единственный публикуемый наружу (`127.0.0.1:<port>:8080`) |
+| `COURSE_JWT_ISSUER`, `COURSE_JWT_AUDIENCE`, `COURSE_JWT_SIGNING_KEY` | api, cli | Проверка/выпуск JWT |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | postgres | Параметры БД |
-| `ConnectionStrings__CourseDb` | api, cli | Строка подключения к PostgreSQL (широкая учётная запись) |
-| `COURSE_WORKFLOW_WORKER_PASSWORD` | cli, worker-a, worker-b | Пароль ограниченной роли `workflow_worker`; `cli` выставляет его через `ALTER ROLE` сразу после применения миграций |
-| `COURSE_INSTANCE_ID` | worker-a, worker-b | Идентификатор владельца лизинга (`worker-a`/`worker-b`) |
-| `COURSE_TEST_PROFILE` | worker-a, worker-b, cli | `1` включает укороченные lease/poll интервалы и `flow test-finish` |
-| `COURSE_FAILPOINT` | worker-a, worker-b | `after_job_claim` \| `after_action_before_finish` — см. раздел «Worker» |
-| `COURSE_LEASE_SECONDS`, `COURSE_POLL_INTERVAL_MS`, `COURSE_CLAIM_BATCH_SIZE` | worker-a, worker-b | Переопределение таймингов worker'а (по умолчанию зависят от `COURSE_TEST_PROFILE`) |
+| `COURSE_POSTGRES_PASSWORD` | postgres | Пароль роли `postgres` |
+| `COURSE_MIGRATOR_PASSWORD` | postgres, cli | Пароль роли `course_migrator` |
+| `COURSE_PUBLISHER_PASSWORD` | postgres | Пароль роли `course_publisher` |
+| `COURSE_RUNTIME_PASSWORD` | postgres, api | Пароль least-privilege роли `course_runtime`, под которой ходит `api` |
+| `COURSE_WORKER_PASSWORD` | postgres, worker-a, worker-b | Пароль роли `workflow_worker` |
+| `COURSE_WORKFLOW_WORKER_PASSWORD` | cli | Alias того же пароля `workflow_worker`, который читает `Cli/Program.cs` при bootstrap роли |
+| `COURSE_OUTBOX_PASSWORD` / `COURSE_OUTBOX_USER` | postgres, outbox-dispatcher | Логин/пароль least-privilege роли `outbox_dispatcher` (используются и как `PGUSER`/`PGPASSWORD`) |
+| `COURSE_INBOX_PASSWORD` / `COURSE_INBOX_USER` | postgres, inbox-reconciler | Логин/пароль least-privilege роли `inbox_reconciler` |
+| `PROVIDER_URL` | outbox-dispatcher | Адрес provider-simulator (по умолчанию `http://provider-simulator:8081`) |
+| `OUTBOX_OWNER` | outbox-dispatcher | Владелец лизинга в `delivery.claim_outbox` |
+| `PROVIDER_CALLBACK_CAPABILITY` | receipt-adapter, provider-simulator | Сегмент callback-URL provider'а |
+| `PROVIDER_CALLBACK_TOKEN` | receipt-adapter | Bearer-токен, которым adapter ходит в gateway — **не** передаётся в provider-simulator |
+| `PROVIDER_HMAC_SECRET` | receipt-adapter, api | Общий секрет для `X-Provider-Signature: v1=<hmac>` |
+| `RECEIPT_API_URL` | receipt-adapter | URL `POST /api/receipt/accept` через gateway |
+| `RECEIPT_ADAPTER_PORT` | receipt-adapter | Порт, который слушает adapter (`8080`) |
+| `PROVIDER_AUDIT_TOKEN` | provider-simulator | Технический токен аудита checker'а |
+| `COURSE_TEST_PROFILE` | все сервисы | Укороченные интервалы/тестовый профиль |
 
 `.env` с реальными секретами не входит в Git.
 
 ---
 
-### Миграции
+### Тесты
 
-SQL-миграции лежат в `Api/Migrations/ChecksummedMigrations/` и применяются сервисом `cli` в лексикографическом порядке, каждая — в отдельной транзакции, идемпотентно (по SHA-256 checksum в `course.migration_history`). Неделя 2 добавляет:
+Python-периметр покрыт `pytest` (без Docker, юнит- и интеграционные тесты в `python/tests/`):
 
-| Файл | Содержимое |
-|---|---|
-| `005_workflow_schema.sql` | Схема `workflow`: таблицы определения карты и рантайм-состояния, роль `workflow_worker` |
-| `006_workflow_autocheck_views.sql` | Views `autocheck.flow_versions/processes/steps/jobs/attempts/signals/workflow_events` |
-| `007_workflow_functions.sql` | `workflow.claim_jobs`, `finish_job`, `fail_job`, `enter_step`, `get_process` |
-| `008_workflow_lifecycle.sql` | `workflow.start_process`, `workflow.receive_signal`, `apply_signal` |
-| `009_insert_workflow_action.sql` | Регистрация HTTP-action `workflow.get` в `course.action_catalog` |
-| `010_insert_training_canary_action.sql` | Схема `training`, идемпотентная test-функция `training.canary`, регистрация в `course.action_catalog` — основа для smoke-карт (см. «Workflow-карты») |
-| `011_workflow_attempt_consistency.sql` | `workflow_job.failure_count` (бюджет retry, отдельно от `attempt_count`) и `UNIQUE (job_id, attempt_number)` на `task_attempt` — см. [ADR 003](docs/003-lease-fencing-at-least-once.md) и [docs/004](docs/004-known-flaky-tests.md) |
+- `test_hmac.py` — корректность HMAC-подписи над compact JSON с sorted keys;
+- `test_adapter.py` — перевод legacy callback в receipt v1, отклонение wrong capability/invalid JSON/large body/CRLF/unknown fields;
+- `test_dispatcher.py` — claim/succeed/fail цикл outbox-dispatcher, классификация ответов provider (retryable/terminal), сохранение idempotency key между retry;
+- `test_integration.py` — сквозной прогон периметра (dispatcher → adapter → receipt v1 → HMAC → duplicate/conflict сценарии).
 
-Файлы `005_role_ownership_and_publication.sql`, `006_db_invariants_and_append_only.sql`, `007_builtin_schema_dialect.sql`, `008_grant_gaps_from_public_report.sql` относятся к неделе 1 (владение объектами схемы, инварианты, донастройка прав, включая общее правило «любая будущая таблица в `course`/`opencheck`/`payment`, созданная суперпользователем, автоматически доступна `course_owner`» — без него `RoleGrantsRegressionTests` в `Api.Tests` не проходил бы) — совпадение номеров с week2-файлами не мешает порядку применения: лексикографически `role_...`/`db_invariants_...`/`builtin_...`/`grant_gaps_...` идут раньше своих `workflow_...`-тёзок с тем же числовым префиксом.
+Один раз поставить зависимости в venv:
 
 ```bash
-docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigrations
+cd ~/projects/week
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
----
-
-### Собственные тесты
-
-`Cli.Tests` (unit, без Docker) и `Api.Tests` (integration, поднимает реальный `postgres:17-alpine` через Testcontainers) — независимы от `./check.sh`/`autocheck`, гоняются локально и в CI одной командой `dotnet test`. Подробности, состав и обоснование каждого теста — [TESTS.md](TESTS.md).
+Запуск тестов:
 
 ```bash
-dotnet test Cli.Tests/Cli.Tests.csproj
-dotnet test Api.Tests/Api.Tests.csproj
+source .venv/bin/activate
+python -m pytest python/tests -v
 ```
+
+Если venv не активирован и системный `python3` не находит `pytest`, используйте интерпретатор из venv напрямую:
+
+```bash
+~/projects/week/.venv/bin/python -m pytest python/tests -v
+```
+
+Полезные варианты:
+
+```bash
+python -m pytest python/tests            # краткий вывод
+python -m pytest python/tests -v -s      # с stdout/stderr
+python -m pytest python/tests -v -x      # остановиться на первом падении
+python -m pytest python/tests/test_hmac.py -v
+```
+
+C#-тесты (`Cli.Tests`, `Api.Tests`) — без изменений в контракте команды запуска, см. [TESTS.md](TESTS.md).
 
 ---
 
 ### Проверка
 
+Репозиторий задания (checker) и репозиторий решения — разные репозитории; `check.sh` предыдущих недель не перезаписывается и не копируется поверх.
+
+Требуются Python 3.11+ для самого checker'а, Docker Engine и Docker Compose v2 с поддержкой `!override`, `!reset` и `config --no-env-resolution`.
+
 ```bash
-docker compose down -v   # освободить порт 8080 и убрать состояние прошлого запуска
-./check.sh
+git clone https://github.com/fintech-dev-lab/moduledev-week-3-python-perimeter-task.git
+./moduledev-week-3-python-perimeter-task/check.sh --repo /path/to/moduledev-solution
 ```
 
-Результат пишется в `week-2-public-report.json`. Свои дополнительные проверки (при наличии) не заменяют `./check.sh`, а дополняют его.
+Путь после `--repo` может быть абсолютным или относительным — checker сам находит Compose-файл в корне указанного решения и туда же пишет `week-3-public-report.json` (без баллов и секретов).
+
+**Compose seam, который проверяется:** ровно эти 10 service names должны существовать и подниматься по `docker compose up -d --build` без ручного вмешательства —
+
+```text
+gateway api cli postgres worker-a worker-b
+outbox-dispatcher receipt-adapter inbox-reconciler provider-simulator
+```
+
+`cli` реализован как one-shot через `Cli/entrypoint.sh` — успешно завершается после миграций и публикации карт. Единственный сервис с host-портом — `gateway`; сначала checker валидирует tracked-контракт с `COURSE_GATEWAY_PORT=8080`, затем поднимает изолированный override со случайным loopback host-портом и тем же `8080` внутри контейнера. Python-сервисы и `provider-simulator` host-портов не публикуют; `receipt-adapter` не получает PostgreSQL-настроек; `outbox-dispatcher`/`inbox-reconciler` используют разные least-privilege роли.
+
+Все переменные из таблицы «Конфигурация» checker подставляет своими synthetic-значениями в изолированном окружении — tracked `docker-compose.yml` должен на них только ссылаться и не требовать `.env` для подъёма. Для паролей PostgreSQL допустим локальный dev-плейсхолдер по умолчанию — checker всё равно подставит собственное значение.
+
+Что именно делает checker:
+
+- Compose admission и cold build;
+- поднимает отдельный project с synthetic secrets;
+- проверяет границы образов C#/Python/provider;
+- останавливает и заново поднимает dispatcher (durable Outbox не теряется);
+- прогоняет provider success, duplicate/conflict callback и обе review-ветки (`WITHIN_LIMIT`/`REVIEW_REQUIRED`);
+- проверяет stable views `autocheck.*` и least-privilege роли (`week3-stable-views`, `python-roles-no-table-privileges`, `python-fixed-function-privileges`);
+- пересоздаёт Python-сервисы и убеждается, что состояние определяется PostgreSQL, а не памятью процесса;
+- пишет `week-3-public-report.json`;
+- удаляет project, volumes и локальные images, если не передан `--keep-stack`.
+
+Коды завершения: `0` — все public checks пройдены, `1` — нарушен контракт решения, `2` — checker или окружение не готовы.
+
+```bash
+docker compose down -v   # освободить порт и убрать состояние прошлого запуска перед прогоном checker'а
+```
+
+Текущее состояние решения — `week-3-public-report.json`: `status: passed`, `failedChecks: []`.
 
 ---
 
 ### Диагностика
 
 ```bash
-docker compose logs gateway
+docker compose logs outbox-dispatcher
+docker compose logs receipt-adapter
+docker compose logs inbox-reconciler
 docker compose logs api
 docker compose logs cli
-docker compose logs worker-a
-docker compose logs worker-b
-docker compose logs postgres
 
 curl http://localhost:8080/health/live
 curl http://localhost:8080/health/ready
 
 docker compose exec postgres psql -U postgres -d course
+
+# one-shot cli: exec не работает, только run --rm
+docker compose run --rm -T --no-deps cli action list
+docker compose run --rm -T --no-deps cli action publish /app/<manifest>.json
+docker compose run --rm -T --no-deps cli flow list
 ```
 
-Компактный статус процесса без прямых SQL-запросов:
+Автосводки по периметру — через read-only views `autocheck.receipts`/`autocheck.decisions` (см. «Миграции») в дополнение к `autocheck.processes`/`autocheck.steps`/`autocheck.jobs`/`autocheck.attempts` недели 2.
 
-```bash
-docker compose run --rm cli flow get <process-id>
-```
+---
 
-Полный снимок (процесс + шаги + задания + попытки) — через HTTP-action `workflow.get` (нужен JWT со scope `workflow:read`), либо напрямую в БД через views `autocheck.processes`/`autocheck.steps`/`autocheck.jobs`/`autocheck.attempts`/`autocheck.workflow_events`.
+### История замечаний
+
+Статусы по калибровке `late-week-quality.2` (`fixed` / `remaining` / `regression` / `not_applicable` / `unverified`) — сопоставление старого и нового результата, а не предположение:
+
+| Замечание | Неделя | Что было | Что сделано | Статус |
+|---|---|---|---|---|
+| Широкие суперпользовательские DB-подключения вместо раздельных identity | 1 | `api`/`cli` ходили в БД одной учёткой | Введены роли `course_owner`/`course_migrator`/`course_publisher`/`course_runtime`, разнесены connection strings | `fixed` |
+| Отсутствие проверки типов `iat`/`scope` в JWT | 1 | JWT принимался без строгой проверки этих полей | Добавлены type-проверки `iat`/`scope` | `fixed` |
+| Неполная валидация manifest/OpenAPI | 1 | Manifest не проверялся по схеме | JsonSchema.Net Draft 2020-12 валидация в CLI | `fixed` |
+| Отсутствие DB-инвариантов/append-only | 1 | Не было ограничений на уровне БД | Добавлены invariants и canary-таблица | `fixed` |
+| `job.attempt_count` не обновлялся при реклейме | 2 | `two-worker-reclaim-and-stale-finish`, `action-finish-rollback-and-recovery` | Миграция 011 (`workflow_job.failure_count` отдельно от `attempt_count`, `UNIQUE(job_id, attempt_number)`) | `fixed` |
+| Все проверки Python-периметра | 3 | — | — | `fixed` — `week-3-public-report.json`: `status: passed`, `failedChecks: []` |
+| Некорректные пароли ролей `outbox_dispatcher`/`inbox_reconciler` | 3 | Миграция `010_delivery_schema.sql` задавала пароли напрямую | Пароли перенесены в `postgres-init/00-bootstrap-roles.sh` | `fixed` |
+| `EXECUTE FROM PUBLIC` давал лишний доступ Python-ролям | 3 | Функции `workflow`/`delivery`/`public` (включая `pgcrypto`) и `course.auto_enable_first_version` были доступны всем ролям | Миграция 016 отзывает `EXECUTE FROM PUBLIC` по всем схемам, точечно re-grant только нужных `delivery`-функций | `fixed` |
+| `api` под широкой учётной записью вместо `course_runtime` | 3 | `api` использовал `POSTGRES_USER`/`COURSE_POSTGRES_PASSWORD` | `api` переведён на `Username=course_runtime;Password=${COURSE_RUNTIME_PASSWORD}`; `worker-a/b` — на `COURSE_WORKER_PASSWORD` | `fixed` |
 
 ---
 
 ### Ограничения
 
-- Docker Compose должен поддерживать `!override`, `!reset` и `config --no-env-resolution` — устаревшая версия падает на `compose-contract` в `./check.sh` с exit-кодом 125.
-- Import BPMN XML, parallel gateways, timers, boundary events, compensation, subprocesses и произвольные expressions не реализованы — сознательно вне рамок недели 2.
-- Завершение шага `manual` по HTTP не реализовано — вынесено в неделю 3.
-- Ветвление `wait_signal` по содержимому сигнала не поддержано: ровно один объявленный переход на declared outcome шага.
-- Количество попыток retry ограничено `task.max_attempts` из карты; `delays_ms` — фиксированный список задержек, не экспоненциальный backoff.
-- На первой неделе `process_id` в `operations` мог быть `null` — с недели 2 worker заполняет его при вызове action из workflow, но записи, созданные до этой миграции, не мигрируются задним числом.
-- Поддерживается только валюта `RUB` (унаследовано от `payment.request` недели 1).
-- `docker-compose.yml` не содержит bind-mount'ов (осознанно, часть контракта безопасности): файлы карт и данных для `cli` передаются через `/dev/stdin`, а не монтированием — см. «Workflow-карты».
-- `docker-compose.yml` не содержит bind-mount'ов (осознанно, часть контракта безопасности): файлы карт и данных для `cli` передаются через `/dev/stdin`, а не монтированием — см. «Workflow-карты».
+- Поддерживается только валюта `RUB` (унаследовано с недели 1).
+- Python-сервисы не имеют host-портов и не публикуются наружу напрямую — единственная точка входа снаружи по-прежнему `gateway`.
+- `receipt-adapter` не имеет database credentials — весь путь до PostgreSQL идёт через `gateway → api → api.invoke`.
+- Пересоздание Python-сервисов не должно терять состояние — источник истины остаётся в PostgreSQL (Outbox/Inbox/receipts/decisions), сами процессы Python — stateless.
+- Provider-simulator подключается по digest, а не по тегу — обновление образа требует явного изменения digest в compose-файле.
 
-ADR:
+ADR и разборы:
 - [ADR 001: Trust boundary](docs/001-trust-boundary.md)
 - [ADR 002: Технический и предметный результат](docs/002-technical-vs-domain-result.md)
 - [ADR 003: Lease, fencing и at-least-once](docs/003-lease-fencing-at-least-once.md)
-
-Разбор задним числом:
-- [004: Как найдена и исправлена причина двух падений `./check.sh` (`two-worker-reclaim-and-stale-finish`, `action-finish-rollback-and-recovery`)](docs/004-known-flaky-tests.md) — корень был в `job.attempt_count` (не обновлялся при `claim_jobs`), исправлено миграцией 011; сохранён путь расследования, включая первоначально ошибочную гипотезу про скорость хоста.

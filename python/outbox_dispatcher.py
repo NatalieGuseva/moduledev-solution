@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 class OutboxDispatcher:
     """
     Python outbox-dispatcher.
-    
+
     Роль: outbox_dispatcher
     Доступ: только EXECUTE на delivery.claim/succeed/fail_outbox
     Не имеет прямого DML доступа к таблицам.
     """
-    
+
     def __init__(
         self,
         db_config: DatabaseConfig,
@@ -32,41 +32,52 @@ class OutboxDispatcher:
         self._owner = dispatcher_config.owner
         self._claim_limit = dispatcher_config.claim_limit
         self._running = False
-    
+
     async def start(self) -> None:
         """Запускает цикл обработки Outbox."""
         await self._db.connect()
         self._running = True
-        
+
         logger.info(f"OutboxDispatcher started (owner={self._owner})")
-        
-        while self._running:
-            try:
-                claims = await self._db.claim_outbox(self._owner, self._claim_limit)
-                
-                for claim in claims:
-                    await self._process_claim(claim)
-                
-                if not claims:
-                    await asyncio.sleep(0.5)
-                    
-            except Exception as e:
-                logger.error(f"Error in dispatcher loop: {e}", exc_info=True)
-                await asyncio.sleep(1)
-    
+
+        try:
+            while self._running:
+                try:
+                    claims = await self._db.claim_outbox(self._owner, self._claim_limit)
+
+                    for claim in claims:
+                        await self._process_claim(claim)
+
+                    if not claims:
+                        await asyncio.sleep(0.5)
+
+                except Exception as e:
+                    logger.error(f"Error in dispatcher loop: {e}", exc_info=True)
+                    await asyncio.sleep(1)
+        finally:
+            # Гарантированно закрываем pool при выходе из цикла
+            # (штатная остановка, ошибка, отмена). Без finally тест
+            # test_dispatcher_main_loop не дожидается close().
+            await self._db.close()
+            logger.info("OutboxDispatcher loop exited")
+
     async def stop(self) -> None:
-        """Останавливает dispatcher."""
+        """Останавливает dispatcher.
+
+        Сам цикл закрывает соединение в finally. Этот метод только
+        сигнализирует циклу выйти — повторный close() не нужен и
+        приводил бы к двойному закрытию pool.
+        """
         self._running = False
-        await self._db.close()
-        logger.info("OutboxDispatcher stopped")
-    
+        logger.info("OutboxDispatcher stop requested")
+
     async def _process_claim(self, claim: OutboxClaim) -> None:
         """
         Обрабатывает один Outbox claim.
         Один claim = одна HTTP попытка к провайдеру.
         """
         logger.info(f"Processing claim: {claim.outbox_id}, request={claim.external_request_id}")
-        
+
         try:
             # Отправка запроса к провайдеру
             response = await self._provider.send_payment(
@@ -75,7 +86,7 @@ class OutboxDispatcher:
                 currency=claim.currency,
                 correlation_id=claim.correlation_id
             )
-            
+
             if response.is_success:
                 # Успешное принятие
                 await self._db.succeed_outbox(
@@ -94,7 +105,7 @@ class OutboxDispatcher:
                     error_code=response.error_code
                 )
                 logger.warning(f"Outbox failed: {claim.outbox_id}, error={response.error_code}")
-                
+
         except Exception as e:
             # Transport error или timeout
             logger.error(f"Transport error for {claim.outbox_id}: {e}")

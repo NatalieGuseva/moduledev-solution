@@ -62,17 +62,18 @@ class TestOutboxDispatcher:
     ):
         """Успешная обработка claim."""
         dispatcher = OutboxDispatcher(db_config, dispatcher_config, provider_config)
-        
+
         # Мокаем методы
         dispatcher._db.claim_outbox = AsyncMock(return_value=[sample_claim])
         dispatcher._db.succeed_outbox = AsyncMock(return_value={})
+        dispatcher._db.fail_outbox = AsyncMock(return_value={})
         dispatcher._provider.send_payment = AsyncMock(
             return_value=ProviderResponse(202, {"providerPaymentId": "provider-123", "status": "ACCEPTED"})
         )
-        
+
         dispatcher._running = True
         await dispatcher._process_claim(sample_claim)
-        
+
         # Проверяем что succeed_outbox был вызван
         dispatcher._db.succeed_outbox.assert_called_once_with(
             outbox_id=sample_claim.outbox_id,
@@ -88,15 +89,16 @@ class TestOutboxDispatcher:
     ):
         """Обработка отказа провайдера (non-retryable)."""
         dispatcher = OutboxDispatcher(db_config, dispatcher_config, provider_config)
-        
+
         dispatcher._db.claim_outbox = AsyncMock(return_value=[sample_claim])
         dispatcher._db.fail_outbox = AsyncMock(return_value={})
+        dispatcher._db.succeed_outbox = AsyncMock(return_value={})
         dispatcher._provider.send_payment = AsyncMock(
             return_value=ProviderResponse(400, {"error": "bad request"})
         )
-        
+
         await dispatcher._process_claim(sample_claim)
-        
+
         # Проверяем что fail_outbox был вызван с terminal error
         dispatcher._db.fail_outbox.assert_called_once_with(
             outbox_id=sample_claim.outbox_id,
@@ -112,15 +114,15 @@ class TestOutboxDispatcher:
     ):
         """Повтор при retryable ошибке."""
         dispatcher = OutboxDispatcher(db_config, dispatcher_config, provider_config)
-        
+
         dispatcher._db.claim_outbox = AsyncMock(return_value=[sample_claim])
         dispatcher._db.fail_outbox = AsyncMock(return_value={})
         dispatcher._provider.send_payment = AsyncMock(
             return_value=ProviderResponse(503, {})
         )
-        
+
         await dispatcher._process_claim(sample_claim)
-        
+
         # Проверяем что fail_outbox был вызван с retryable error
         dispatcher._db.fail_outbox.assert_called_once_with(
             outbox_id=sample_claim.outbox_id,
@@ -135,15 +137,15 @@ class TestOutboxDispatcher:
     ):
         """Обработка транспортной ошибки."""
         dispatcher = OutboxDispatcher(db_config, dispatcher_config, provider_config)
-        
+
         dispatcher._db.claim_outbox = AsyncMock(return_value=[sample_claim])
         dispatcher._db.fail_outbox = AsyncMock(return_value={})
         dispatcher._provider.send_payment = AsyncMock(
             side_effect=Exception("Connection refused")
         )
-        
+
         await dispatcher._process_claim(sample_claim)
-        
+
         dispatcher._db.fail_outbox.assert_called_once_with(
             outbox_id=sample_claim.outbox_id,
             owner=dispatcher._owner,
@@ -155,26 +157,26 @@ class TestOutboxDispatcher:
     async def test_dispatcher_main_loop(self, db_config, dispatcher_config, provider_config):
         """Тест основного цикла dispatcher."""
         dispatcher = OutboxDispatcher(db_config, dispatcher_config, provider_config)
-        
+
         # Мокаем методы
         dispatcher._db.connect = AsyncMock()
         dispatcher._db.close = AsyncMock()
         dispatcher._db.claim_outbox = AsyncMock(return_value=[])
-        
-        # Запускаем в фоне и останавливаем через 0.5 сек
+
+        # Запускаем в фоне и останавливаем через 0.1 сек
         dispatcher._running = True
-        
+
         async def stop_after_delay():
             await asyncio.sleep(0.1)
             dispatcher._running = False
-        
+
         # Запускаем оба task
         await asyncio.gather(
             dispatcher.start(),
             stop_after_delay(),
             return_exceptions=True
         )
-        
+
         # Проверяем что методы вызывались
         dispatcher._db.connect.assert_called_once()
         dispatcher._db.close.assert_called_once()
@@ -185,13 +187,13 @@ class TestOutboxDispatcher:
     ):
         """Idempotency-Key и body сохраняются при повторах."""
         dispatcher = OutboxDispatcher(db_config, dispatcher_config, provider_config)
-        
+
         # Первая попытка - retryable error
         dispatcher._db.claim_outbox = AsyncMock(return_value=[sample_claim])
         dispatcher._db.fail_outbox = AsyncMock(return_value={})
-        
+
         call_count = 0
-        
+
         async def mock_send(*args, **kwargs):
             nonlocal call_count
             call_count += 1
@@ -200,20 +202,20 @@ class TestOutboxDispatcher:
             elif call_count == 2:
                 return ProviderResponse(202, {"providerPaymentId": "provider-456", "status": "ACCEPTED"})
             return ProviderResponse(202, {"providerPaymentId": "provider-789", "status": "ACCEPTED"})
-        
+
         dispatcher._provider.send_payment = AsyncMock(side_effect=mock_send)
-        
+
         # Первая попытка
         await dispatcher._process_claim(sample_claim)
-        
+
         # Вторая попытка (с тем же claim - симуляция retry)
         # Проверяем что external_request_id не изменился
         assert sample_claim.external_request_id == "external-123"
-        
+
         # Проверяем что вторая попытка успешна
         dispatcher._db.succeed_outbox = AsyncMock(return_value={})
         await dispatcher._process_claim(sample_claim)
-        
+
         # Проверяем что succeed_outbox вызван с правильным provider_payment_id
         dispatcher._db.succeed_outbox.assert_called_with(
             outbox_id=sample_claim.outbox_id,

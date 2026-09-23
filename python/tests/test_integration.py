@@ -240,4 +240,19 @@ class TestEndToEndFlow:
             "providerPaymentId": "provider-conflict-123",
             "operationId": "external-conflict-123",
             "result": "REJECTED",
-            "message
+            "message": "Late rejection",
+            "occurredAt": "2026-09-04T12:00:01Z"
+        }
+
+        
+        callback1 = ProviderCallback.from_dict(legacy_callback_1)
+        callback2 = ProviderCallback.from_dict(legacy_callback_2)
+
+        receipt1 = ReceiptV1.from_legacy(callback1)
+        receipt2 = ReceiptV1.from_legacy(callback2)
+
+        assert receipt1.message_id == receipt2.message_id
+
+        bytes1 = receipt1.to_compact_json_bytes()
+        bytes2 = receipt2.to_compact_json_bytes()
+        assert bytes1 != bytes2

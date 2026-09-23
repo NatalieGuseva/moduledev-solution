@@ -484,8 +484,10 @@ ALTER VIEW autocheck.external_requests OWNER TO course_owner;
 -- Defense-in-depth, тот же приём, что 004_revoke_execute_public.sql
 -- и 007_workflow_functions.sql: снимаем дефолтный PUBLIC EXECUTE сразу
 -- в этой же миграции, не откладывая на отдельную.
+SET ROLE course_owner;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA delivery FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES IN SCHEMA delivery REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+RESET ROLE;
 
 -- outbox_dispatcher получает EXECUTE ровно на 3 функции — не на
 -- enqueue_outbox/confirm_outbox и не на прямой DML таблиц.

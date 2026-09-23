@@ -232,7 +232,7 @@ class TestReceiptAdapter:
             response = await adapter._handle_callback(request)
             
             assert response.status == 200
-            assert "status" in await response.text()
+            assert "status" in response.text
 
     @pytest.mark.asyncio
     async def test_adapter_gateway_timeout(self, adapter):
@@ -255,7 +255,7 @@ class TestReceiptAdapter:
             response = await adapter._handle_callback(request)
             
             assert response.status == 503
-            body = json.loads(await response.text())
+            body = json.loads(response.text)
             assert body["code"] == "dependency.unavailable"
 
     @pytest.mark.asyncio

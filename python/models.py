@@ -43,7 +43,7 @@ class ProviderPaymentRequest:
     operation_id: str
     amount: str
     currency: str
-    
+
     def to_json(self) -> dict:
         return {
             "operationId": self.operation_id,
@@ -60,21 +60,37 @@ class ProviderCallback:
     result: str
     message: str
     occurred_at: str
-    
+
+    # Поля, обязательные по provider-v02-callback.schema.json.
+    # message не входит: он валидируется по типу/размеру и отбрасывается,
+    # но сам по себе не обязателен для непустого callback'а — по контракту
+    # v0.2.0 он присутствует всегда, но мы допускаем его отсутствие как "".
+    REQUIRED_FIELDS = ("providerPaymentId", "operationId", "result", "occurredAt")
+    ALLOWED_FIELDS = {
+        "providerPaymentId", "operationId", "result", "message", "occurredAt"
+    }
+
     @classmethod
     def from_dict(cls, data: dict) -> "ProviderCallback":
         """Строгая валидация с reject unknown fields."""
-        allowed = {"providerPaymentId", "operationId", "result", "message", "occurredAt"}
-        unknown = set(data.keys()) - allowed
+        unknown = set(data.keys()) - cls.ALLOWED_FIELDS
         if unknown:
             raise ValueError(f"Unknown fields: {unknown}")
-        
+
+        # Проверяем обязательные поля до обращения к ним — иначе
+        # отсутствие, например, "result" даст KeyError, который не
+        # ловится в receipt_adapter._handle_callback (там except ValueError),
+        # и HTTP-ответ будет 500 вместо 400.
+        missing = set(cls.REQUIRED_FIELDS) - set(data.keys())
+        if missing:
+            raise ValueError(f"Missing required fields: {sorted(missing)}")
+
         # Проверка CR/LF в строковых полях
         for field in ("providerPaymentId", "operationId", "occurredAt", "message"):
             value = data.get(field)
             if value and ("\r" in str(value) or "\n" in str(value)):
                 raise ValueError(f"CR/LF not allowed in {field}")
-        
+
         return cls(
             provider_payment_id=data["providerPaymentId"],
             operation_id=data["operationId"],
@@ -93,13 +109,13 @@ class ReceiptV1:
     outcome: str
     provider_payment_id: str
     version: int = 1
-    
+
     @classmethod
     def from_legacy(cls, callback: ProviderCallback) -> "ReceiptV1":
         """Преобразует legacy callback в receipt v1."""
         if callback.result not in ("COMPLETED", "REJECTED"):
             raise ValueError(f"Invalid result: {callback.result}")
-        
+
         return cls(
             external_request_id=callback.operation_id,
             message_id=callback.provider_payment_id,
@@ -107,7 +123,7 @@ class ReceiptV1:
             outcome=callback.result,
             provider_payment_id=callback.provider_payment_id
         )
-    
+
     def to_compact_json_bytes(self) -> bytes:
         """Сериализует в compact JSON с sorted keys, без BOM и LF."""
         import json

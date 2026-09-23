@@ -1,13 +1,24 @@
 #!/bin/sh
-# Одношаговый bootstrap: миграции + публикация/активация payment-flows.
-# publish/activate идемпотентны (см. Cli/Commands/FlowCommands.cs), поэтому
-# скрипт безопасно перезапускать на каждый `docker compose up` этого сервиса.
+# Bootstrap + entrypoint для CLI.
+#
+# Если переданы аргументы (например, `cli action publish ...` от checker'а),
+# сразу exec'аем их в dotnet Cli.dll, ничего не делая до этого.
+#
+# Если аргументов нет (обычный `docker compose up` сервиса cli),
+# делаем одноразовый bootstrap: миграции + публикация/активация payment-flows.
+#
+# Весь диагностический вывод bootstrap идёт в stderr, чтобы не мешать
+# JSON-ответу CLI в stdout (checker парсит stdout как одну JSON-строку).
 set -e
 
-dotnet Cli.dll migration apply /app/Migrations/ChecksummedMigrations
+if [ "$#" -gt 0 ]; then
+  exec dotnet Cli.dll "$@"
+fi
 
-dotnet Cli.dll flow publish /app/contracts/course-1/payment-processing-v1.flow.yaml
-dotnet Cli.dll flow activate payment-processing --version 1
+dotnet Cli.dll migration apply /app/Migrations/ChecksummedMigrations >&2
 
-dotnet Cli.dll flow publish /app/contracts/course-1/payment-review-v1.flow.yaml
-dotnet Cli.dll flow activate payment-review --version 1
+dotnet Cli.dll flow publish /app/contracts/course-1/payment-processing-v1.flow.yaml >&2
+dotnet Cli.dll flow activate payment-processing --version 1 >&2
+
+dotnet Cli.dll flow publish /app/contracts/course-1/payment-review-v1.flow.yaml >&2
+dotnet Cli.dll flow activate payment-review --version 1 >&2
