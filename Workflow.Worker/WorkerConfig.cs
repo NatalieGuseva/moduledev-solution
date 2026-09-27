@@ -15,6 +15,7 @@ public class WorkerConfig
     public required int LeaseSeconds { get; init; }
     public required int PollIntervalMs { get; init; }
     public required int ClaimBatchSize { get; init; }
+    public required int HealthPort { get; init; }
 
     public static WorkerConfig FromEnvironment()
     {
@@ -30,7 +31,12 @@ public class WorkerConfig
             Failpoint = Environment.GetEnvironmentVariable("COURSE_FAILPOINT"),
             LeaseSeconds = GetInt("COURSE_LEASE_SECONDS", testProfile ? 2 : 30),
             PollIntervalMs = GetInt("COURSE_POLL_INTERVAL_MS", testProfile ? 100 : 1000),
-            ClaimBatchSize = GetInt("COURSE_CLAIM_BATCH_SIZE", 5)
+            ClaimBatchSize = GetInt("COURSE_CLAIM_BATCH_SIZE", 5),
+            // Неделя 4: worker-a/worker-b в одном контейнерном namespace
+            // каждый, порт не пересекается между ними; дефолт отдельный от
+            // dispatcher(8090)/reconciler(8091), чтобы при желании поднять
+            // всё на одном хосте без docker тоже не было конфликта.
+            HealthPort = GetInt("COURSE_HEALTH_PORT", 8092)
         };
     }
 

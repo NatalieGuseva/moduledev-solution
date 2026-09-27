@@ -3,7 +3,13 @@
   "$id": "urn:course:course-1:payment-submit-result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["operationId", "processId", "flowName", "flowVersion", "status"],
+  "required": [
+    "operationId",
+    "processId",
+    "flowName",
+    "flowVersion",
+    "status"
+  ],
   "properties": {
     "operationId": {"type": "string", "format": "uuid"},
     "processId": {"type": "string", "format": "uuid"},

@@ -10,13 +10,30 @@ Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
 var config = WorkerConfig.FromEnvironment();
 
 using var loggerFactory = LoggerFactory.Create(builder => builder
-    .AddSimpleConsole(o => { o.SingleLine = true; o.TimestampFormat = "HH:mm:ss "; })
+    // FIX (неделя 4, "Логи — интерфейс для ИИ-агента"): один лог = один
+    // JSON object. AddSimpleConsole печатал произвольный текст —
+    // AddJsonConsole входит в Microsoft.Extensions.Logging.Console "из
+    // коробки" (без новых пакетов) и уже даёт валидный JSON per line
+    // (Category/LogLevel/Message/EventId/State). Это НЕ то же самое, что
+    // кастомная схема полей python-сервисов (correlationId/event/service —
+    // см. python/observability.py) — здесь только формат приведён к
+    // "одна строка = один JSON", разбор структурных полей (jobId,
+    // leaseVersion и т.п.) worker и раньше вкладывал в Message через
+    // {JobId}-плейсхолдеры Microsoft.Extensions.Logging, они остаются
+    // в JSON-поле "State".
+    .AddJsonConsole(o =>
+    {
+        o.IncludeScopes = false;
+        o.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
+        o.UseUtcTimestamp = true;
+        o.JsonWriterOptions = new System.Text.Json.JsonWriterOptions { Indented = false };
+    })
     .SetMinimumLevel(LogLevel.Information));
 
 var logger = loggerFactory.CreateLogger("Workflow.Worker");
 logger.LogInformation(
-    "starting instance={InstanceId} testProfile={TestProfile} failpoint={Failpoint} lease={Lease}s poll={Poll}ms batch={Batch}",
-    config.InstanceId, config.TestProfile, config.Failpoint ?? "(none)", config.LeaseSeconds, config.PollIntervalMs, config.ClaimBatchSize);
+    "starting instance={InstanceId} testProfile={TestProfile} failpoint={Failpoint} lease={Lease}s poll={Poll}ms batch={Batch} healthPort={HealthPort}",
+    config.InstanceId, config.TestProfile, config.Failpoint ?? "(none)", config.LeaseSeconds, config.PollIntervalMs, config.ClaimBatchSize, config.HealthPort);
 
 // Minimum Pool Size держит несколько соединений всегда открытыми и
 // прогретыми (аутентификация уже пройдена), чтобы claim/finish/fail
@@ -30,6 +47,12 @@ var connectionStringBuilder = new NpgsqlConnectionStringBuilder(config.Connectio
 await using var dataSource = NpgsqlDataSource.Create(connectionStringBuilder.ConnectionString);
 var actionExecutor = new ActionExecutor(loggerFactory.CreateLogger<ActionExecutor>());
 var stepRunner = new StepRunner(dataSource, actionExecutor, config, loggerFactory.CreateLogger<StepRunner>());
+
+// Неделя 4: /health/live + /health/ready — раньше worker не слушал HTTP
+// вообще ни на чём. Порт независим от failpoint/PollInterval и не
+// участвует в лизинге; см. WorkerHealthServer.cs.
+await using var healthServer = new WorkerHealthServer(dataSource, loggerFactory.CreateLogger("Workflow.Worker.Health"), config.HealthPort);
+healthServer.Start();
 
 using var cts = new CancellationTokenSource();
 

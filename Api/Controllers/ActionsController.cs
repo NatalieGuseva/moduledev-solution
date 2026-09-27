@@ -89,6 +89,11 @@ public class ActionsController : ControllerBase
     {
         "access.denied" => StatusCodes.Status403Forbidden,
         "action.not_found" => StatusCodes.Status404NotFound,
+        // Неделя 4: diagnostics.trace возвращает специфический
+        // not-found код (а не общий action.not_found — это action
+        // НАЙДЕН и выполнен, просто сама трасса пуста), но контракт
+        // требует именно HTTP 404 на неё.
+        "diagnostics.trace_not_found" => StatusCodes.Status404NotFound,
         "idempotency.conflict" => StatusCodes.Status409Conflict,
         "idempotency.required" => StatusCodes.Status400BadRequest,
         "payload.invalid" => StatusCodes.Status422UnprocessableEntity,

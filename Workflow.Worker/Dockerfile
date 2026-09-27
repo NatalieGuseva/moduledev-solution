@@ -21,8 +21,10 @@ WORKDIR /app
 # libgssapi-krb5-2 (НЕ libkrb5-3 — тот даёт только libkrb5.so.3,
 # проверено на реальной системе); libkrb5-3 подтягивается им как
 # зависимость автоматически.
+# curl — неделя 4: docker-compose healthcheck для /health/live
+# (mcr.microsoft.com/dotnet/runtime не содержит ни curl, ни wget по умолчанию).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=publish /app/publish .

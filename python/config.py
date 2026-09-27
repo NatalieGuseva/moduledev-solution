@@ -43,6 +43,28 @@ class DatabaseConfig:
 
 
 @dataclass(frozen=True)
+class RuntimeProfile:
+    """Неделя 4: test profile / failpoint / instance identity / health port —
+    общие для dispatcher, reconciler и adapter, поэтому вынесены в один
+    dataclass, а не продублированы в каждом *Config.
+    """
+    test_profile: bool
+    failpoint: Optional[str]
+    instance_id: str
+    health_port: int
+
+    @classmethod
+    def from_env(cls, default_instance_id: str, default_health_port: int) -> "RuntimeProfile":
+        test_profile = environ.get("COURSE_TEST_PROFILE") == "1"
+        return cls(
+            test_profile=test_profile,
+            failpoint=environ.get("COURSE_FAILPOINT") or None,
+            instance_id=environ.get("COURSE_INSTANCE_ID", default_instance_id),
+            health_port=int(environ.get("COURSE_HEALTH_PORT", default_health_port)),
+        )
+
+
+@dataclass(frozen=True)
 class ProviderConfig:
     """Конфигурация провайдера.
 
@@ -53,9 +75,13 @@ class ProviderConfig:
     timeout_seconds: float = 5.0
 
     @classmethod
-    def from_env(cls) -> "ProviderConfig":
+    def from_env(cls, test_profile: bool = False) -> "ProviderConfig":
         url = environ.get("PROVIDER_URL", "http://provider-simulator:8081")
-        return cls(url=url)
+        # Неделя 4, test profile (07-autocheck-outline.md): timeout 500 ms.
+        # Прод — консервативнее (5s по умолчанию), тоже переопределяемо.
+        default_timeout = 0.5 if test_profile else 5.0
+        timeout_seconds = float(environ.get("PROVIDER_TIMEOUT_SECONDS", default_timeout))
+        return cls(url=url, timeout_seconds=timeout_seconds)
 
 
 @dataclass(frozen=True)
@@ -70,6 +96,10 @@ class AdapterConfig:
     hmac_secret: str
     receipt_api_url: str
     max_body_size: int = 64 * 1024  # 64 KiB
+    # Проверка readiness: "для adapter — gateway" (Live/ready и шесть метрик).
+    # Не PROVIDER_URL и не PostgreSQL — adapter в принципе не имеет
+    # PostgreSQL credentials, а provider для него не critical dependency.
+    gateway_url: str = "http://gateway:8080"
 
     @classmethod
     def from_env(cls) -> "AdapterConfig":
@@ -77,6 +107,7 @@ class AdapterConfig:
         token = environ.get("PROVIDER_CALLBACK_TOKEN")
         hmac_secret = environ.get("PROVIDER_HMAC_SECRET")
         receipt_api_url = environ.get("RECEIPT_API_URL", "http://gateway:8080/api/receipt/accept")
+        gateway_url = environ.get("GATEWAY_URL", "http://gateway:8080")
 
         if not capability:
             raise ValueError("PROVIDER_CALLBACK_CAPABILITY is required")
@@ -90,6 +121,7 @@ class AdapterConfig:
             token=token,
             hmac_secret=hmac_secret,
             receipt_api_url=receipt_api_url,
+            gateway_url=gateway_url,
         )
 
 
@@ -104,6 +136,27 @@ class DispatcherConfig:
     claim_limit: int = 10
 
     @classmethod
-    def from_env(cls) -> "DispatcherConfig":
+    def from_env(cls, test_profile: bool = False) -> "DispatcherConfig":
         owner = environ.get("OUTBOX_OWNER", "outbox-dispatcher")
-        return cls(owner=owner)
+        default_poll = 0.2 if test_profile else 0.5
+        poll_interval_seconds = float(environ.get("OUTBOX_POLL_INTERVAL_SECONDS", default_poll))
+        claim_limit = int(environ.get("OUTBOX_CLAIM_LIMIT", 10))
+        return cls(owner=owner, poll_interval_seconds=poll_interval_seconds, claim_limit=claim_limit)
+
+
+@dataclass(frozen=True)
+class ReconcilerConfig:
+    """Конфигурация inbox-reconciler — раньше задавалась позиционными
+    default-аргументами прямо в __main__.py; вынесена сюда, чтобы
+    reconciler получал COURSE_INSTANCE_ID/health_port тем же способом,
+    что dispatcher и adapter (симметрия неделя-4 конфигурации).
+    """
+    poll_interval_seconds: float = 0.5
+    batch_limit: int = 100
+
+    @classmethod
+    def from_env(cls, test_profile: bool = False) -> "ReconcilerConfig":
+        default_poll = 0.2 if test_profile else 0.5
+        poll_interval_seconds = float(environ.get("INBOX_POLL_INTERVAL_SECONDS", default_poll))
+        batch_limit = int(environ.get("INBOX_BATCH_LIMIT", 100))
+        return cls(poll_interval_seconds=poll_interval_seconds, batch_limit=batch_limit)

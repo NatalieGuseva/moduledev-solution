@@ -28,6 +28,17 @@ class DatabaseClient:
         """Закрывает пул."""
         if self._pool:
             await self._pool.close()
+
+    async def ping(self) -> bool:
+        """Лёгкая проверка соединения для /health/ready — SELECT 1 не
+        требует никаких табличных grant'ов (в отличие от прямого чтения
+        delivery.outbox), поэтому безопасен для outbox_dispatcher/
+        inbox_reconciler ролей с их fixed-function-only доступом."""
+        if self._pool is None:
+            return False
+        async with self._pool.acquire() as conn:
+            value = await conn.fetchval("SELECT 1")
+            return value == 1
     
     async def claim_outbox(self, owner: str, limit: int = 10) -> List[OutboxClaim]:
         """

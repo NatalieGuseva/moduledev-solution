@@ -1,0 +1,3714 @@
+{
+  "manifestVersion": "week-4-public-report/v1",
+  "toolVersion": "week-4-public-check/0.4",
+  "timestamps": {
+    "startedAt": "2026-09-27T13:33:22.247222+00:00",
+    "finishedAt": "2026-09-27T13:36:08.611696+00:00"
+  },
+  "status": "failed",
+  "checks": [
+    {
+      "name": "compose-environment-contract",
+      "phase": "admission",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "compose-contract",
+      "phase": "admission",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "runtime-compose-contract",
+      "phase": "admission",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "cli-startup-completed",
+      "phase": "admission",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "python-single-image",
+      "phase": "admission",
+      "status": "passed",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "name": "python-version-outbox-dispatcher",
+      "phase": "admission",
+      "status": "passed",
+      "expected": "predicate",
+      "actual": "3.12.14"
+    },
+    {
+      "name": "python-version-outbox-dispatcher-b",
+      "phase": "admission",
+      "status": "passed",
+      "expected": "predicate",
+      "actual": "3.12.14"
+    },
+    {
+      "name": "python-version-receipt-adapter",
+      "phase": "admission",
+      "status": "passed",
+      "expected": "predicate",
+      "actual": "3.12.14"
+    },
+    {
+      "name": "python-version-inbox-reconciler",
+      "phase": "admission",
+      "status": "passed",
+      "expected": "predicate",
+      "actual": "3.12.14"
+    },
+    {
+      "name": "python-version-inbox-reconciler-b",
+      "phase": "admission",
+      "status": "passed",
+      "expected": "predicate",
+      "actual": "3.12.14"
+    },
+    {
+      "name": "trusted-read-only-database-channel",
+      "phase": "startup",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "autocheck-reader-not-elevated",
+      "phase": "security",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "autocheck-reader-no-memberships",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "autocheck-reader-no-excess-relation-privileges",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "autocheck-reader-no-schema-create",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "autocheck-reader-no-unrelated-schema-usage",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "autocheck-reader-no-sequence-privileges",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "autocheck-reader-no-application-function-execute",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "autocheck-reader-no-database-create-or-temp",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "week4-stable-views",
+      "phase": "startup",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "week4-stable-view-columns",
+      "phase": "startup",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "week4-stable-relations-are-views",
+      "phase": "startup",
+      "status": "passed",
+      "expected": {
+        "action_dispatches": "v",
+        "external_requests": "v",
+        "receipts": "v",
+        "operations": "v",
+        "decisions": "v",
+        "jobs": "v",
+        "steps": "v",
+        "action_definitions": "v",
+        "flow_versions": "v",
+        "workflow_events": "v",
+        "inbox": "v",
+        "operation_events": "v",
+        "contract_info": "v",
+        "signals": "v",
+        "processes": "v",
+        "attempts": "v",
+        "outbox": "v"
+      },
+      "actual": {
+        "contract_info": "v",
+        "action_definitions": "v",
+        "action_dispatches": "v",
+        "operations": "v",
+        "operation_events": "v",
+        "flow_versions": "v",
+        "processes": "v",
+        "steps": "v",
+        "attempts": "v",
+        "signals": "v",
+        "workflow_events": "v",
+        "inbox": "v",
+        "external_requests": "v",
+        "jobs": "v",
+        "receipts": "v",
+        "decisions": "v",
+        "outbox": "v"
+      }
+    },
+    {
+      "name": "week4-stable-view-types",
+      "phase": "startup",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "week4-contract-info",
+      "phase": "startup",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "payment-flows-active",
+      "phase": "startup",
+      "status": "passed",
+      "expected": [
+        [
+          "payment-processing",
+          1
+        ],
+        [
+          "payment-review",
+          1
+        ]
+      ],
+      "actual": [
+        [
+          "payment-processing",
+          1
+        ],
+        [
+          "payment-review",
+          1
+        ]
+      ]
+    },
+    {
+      "name": "python-database-roles",
+      "phase": "security",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "python-roles-no-memberships",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "python-roles-no-table-privileges",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "python-roles-no-schema-create",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "python-roles-no-database-create",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "python-fixed-sql-boundaries",
+      "phase": "startup",
+      "status": "passed",
+      "expected": [
+        [
+          "claim_outbox",
+          "text, integer"
+        ],
+        [
+          "fail_outbox",
+          "uuid, text, bigint, text"
+        ],
+        [
+          "reconcile_inbox",
+          "integer"
+        ],
+        [
+          "succeed_outbox",
+          "uuid, text, bigint, text"
+        ]
+      ],
+      "actual": [
+        [
+          "claim_outbox",
+          "text, integer"
+        ],
+        [
+          "fail_outbox",
+          "uuid, text, bigint, text"
+        ],
+        [
+          "reconcile_inbox",
+          "integer"
+        ],
+        [
+          "succeed_outbox",
+          "uuid, text, bigint, text"
+        ]
+      ]
+    },
+    {
+      "name": "python-fixed-function-privileges",
+      "phase": "security",
+      "status": "passed",
+      "expected": [
+        [
+          "inbox_reconciler",
+          "delivery",
+          "reconcile_inbox",
+          "integer"
+        ],
+        [
+          "outbox_dispatcher",
+          "delivery",
+          "claim_outbox",
+          "text, integer"
+        ],
+        [
+          "outbox_dispatcher",
+          "delivery",
+          "fail_outbox",
+          "uuid, text, bigint, text"
+        ],
+        [
+          "outbox_dispatcher",
+          "delivery",
+          "succeed_outbox",
+          "uuid, text, bigint, text"
+        ]
+      ],
+      "actual": [
+        [
+          "inbox_reconciler",
+          "delivery",
+          "reconcile_inbox",
+          "integer"
+        ],
+        [
+          "outbox_dispatcher",
+          "delivery",
+          "claim_outbox",
+          "text, integer"
+        ],
+        [
+          "outbox_dispatcher",
+          "delivery",
+          "fail_outbox",
+          "uuid, text, bigint, text"
+        ],
+        [
+          "outbox_dispatcher",
+          "delivery",
+          "succeed_outbox",
+          "uuid, text, bigint, text"
+        ]
+      ]
+    },
+    {
+      "name": "startup-runtime-database-principals-no-mismatch",
+      "phase": "security",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "startup-adapter-has-no-runtime-database-session",
+      "phase": "security",
+      "status": "passed",
+      "expected": false,
+      "actual": false
+    },
+    {
+      "name": "health-live-api",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "health-ready-api",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "metrics-bounded-labels-api",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "metrics-bounded-label-values-api",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "metrics-required-series",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "metrics-required-types",
+      "phase": "observability",
+      "status": "passed",
+      "expected": {
+        "workflow_jobs_ready": "gauge",
+        "workflow_job_oldest_age_seconds": "gauge",
+        "workflow_processes_waiting": "gauge",
+        "outbox_pending": "gauge",
+        "outbox_oldest_age_seconds": "gauge",
+        "workflow_failures": "counter"
+      },
+      "actual": {
+        "workflow_jobs_ready": "gauge",
+        "workflow_job_oldest_age_seconds": "gauge",
+        "workflow_processes_waiting": "gauge",
+        "outbox_pending": "gauge",
+        "outbox_oldest_age_seconds": "gauge",
+        "workflow_failures": "counter"
+      }
+    },
+    {
+      "name": "health-live-worker-a",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "health-ready-worker-a",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "metrics-bounded-labels-worker-a",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "metrics-bounded-label-values-worker-a",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "health-live-worker-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "health-ready-worker-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "metrics-bounded-labels-worker-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "metrics-bounded-label-values-worker-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "health-live-outbox-dispatcher",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "health-ready-outbox-dispatcher",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "metrics-bounded-labels-outbox-dispatcher",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "metrics-bounded-label-values-outbox-dispatcher",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "health-live-outbox-dispatcher-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "health-ready-outbox-dispatcher-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "metrics-bounded-labels-outbox-dispatcher-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "metrics-bounded-label-values-outbox-dispatcher-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "health-live-receipt-adapter",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "health-ready-receipt-adapter",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "metrics-bounded-labels-receipt-adapter",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "metrics-bounded-label-values-receipt-adapter",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "health-live-inbox-reconciler",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "health-ready-inbox-reconciler",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "metrics-bounded-labels-inbox-reconciler",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "metrics-bounded-label-values-inbox-reconciler",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "health-live-inbox-reconciler-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "health-ready-inbox-reconciler-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "metrics-bounded-labels-inbox-reconciler-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "metrics-bounded-label-values-inbox-reconciler-b",
+      "phase": "observability",
+      "status": "passed",
+      "expected": [],
+      "actual": []
+    },
+    {
+      "name": "provider-outage-keeps-runtime-ready",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "metrics-reflect-pending-outbox",
+      "phase": "observability",
+      "status": "passed",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "run-summary",
+      "phase": "checker",
+      "status": "failed",
+      "expected": "public checker completes",
+      "actual": "retryable outage exhausted before the attempt limit"
+    }
+  ],
+  "failedChecks": [
+    "run-summary"
+  ],
+  "commands": [
+    {
+      "command": [
+        "docker",
+        "info",
+        "--format",
+        "{{.ServerVersion}}"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 657
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "version",
+        "--short"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 103
+    },
+    {
+      "command": [
+        "docker",
+        "compose",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/compose-preflight-base.yaml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/compose-preflight-override.yaml",
+        "config",
+        "--format",
+        "json",
+        "--no-env-resolution"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 129
+    },
+    {
+      "command": [
+        "psql",
+        "--version"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 49
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "config",
+        "--format",
+        "json",
+        "--no-env-resolution"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 164
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "config",
+        "--format",
+        "json",
+        "--no-env-resolution"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 167
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "config",
+        "--format",
+        "json",
+        "--no-env-resolution"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 188
+    },
+    {
+      "command": [
+        "docker",
+        "pull",
+        "ghcr.io/fintech-dev-lab/internship-provider-simulator:v0.2.0@sha256:70e5e0dd9ab8425be84de431ec74516f9bedf5d5529077358e2e2b2037fe0c74"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 1295
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "build",
+        "--pull",
+        "--no-cache"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 100479
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "up",
+        "-d",
+        "--no-build"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 32194
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "gateway"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 301
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 271
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "worker-a"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 270
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 293
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "api"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 249
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 233
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "provider-simulator"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 246
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "worker-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 245
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 251
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "postgres"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 256
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "receipt-adapter"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 252
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-a",
+        "-q",
+        "cli"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 279
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.State.Status}} {{.State.ExitCode}}",
+        "958b9aa29cb5787b93480aedabb22ebe4bc893a9a7df3c31dfc61596c772feb2"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 78
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 262
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "85eb4f0372c5329065be3b1e1d6f2f5b05160e83969ae55ed927cec1571fe5a2"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 72
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 249
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "c79e1c626979d34f49a282b476a9505329aaeb80cbc7e44a4bb39c73eaf5d9c7"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 68
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "receipt-adapter"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 245
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "4952bc10c3d61f653a8bf0748109a2d3e388bf814631441dbabc6833a656937f"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 75
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 247
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "1020f349c5823375536f51fac9ae73f1f10a33ea0454be92fef3b7044db2c3bd"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 73
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 251
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "33cb7636888323dee1f402fbcc2f3241cc738053bf48e7427036eeb874f727a0"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 64
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 242
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 252
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Path}}",
+        "85eb4f0372c5329065be3b1e1d6f2f5b05160e83969ae55ed927cec1571fe5a2"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 69
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "85eb4f0372c5329065be3b1e1d6f2f5b05160e83969ae55ed927cec1571fe5a2",
+        "python",
+        "--version"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 171
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 251
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 244
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Path}}",
+        "c79e1c626979d34f49a282b476a9505329aaeb80cbc7e44a4bb39c73eaf5d9c7"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 68
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "c79e1c626979d34f49a282b476a9505329aaeb80cbc7e44a4bb39c73eaf5d9c7",
+        "python",
+        "--version"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 176
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "receipt-adapter"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 247
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "receipt-adapter"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 250
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Path}}",
+        "4952bc10c3d61f653a8bf0748109a2d3e388bf814631441dbabc6833a656937f"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 65
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "4952bc10c3d61f653a8bf0748109a2d3e388bf814631441dbabc6833a656937f",
+        "python",
+        "--version"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 183
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 243
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 249
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Path}}",
+        "1020f349c5823375536f51fac9ae73f1f10a33ea0454be92fef3b7044db2c3bd"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 68
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "1020f349c5823375536f51fac9ae73f1f10a33ea0454be92fef3b7044db2c3bd",
+        "python",
+        "--version"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 187
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 255
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 248
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Path}}",
+        "33cb7636888323dee1f402fbcc2f3241cc738053bf48e7427036eeb874f727a0"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 71
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "33cb7636888323dee1f402fbcc2f3241cc738053bf48e7427036eeb874f727a0",
+        "python",
+        "--version"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 178
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 260
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "85eb4f0372c5329065be3b1e1d6f2f5b05160e83969ae55ed927cec1571fe5a2"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 71
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 282
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "c79e1c626979d34f49a282b476a9505329aaeb80cbc7e44a4bb39c73eaf5d9c7"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 71
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "receipt-adapter"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 264
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "4952bc10c3d61f653a8bf0748109a2d3e388bf814631441dbabc6833a656937f"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 68
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 251
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "1020f349c5823375536f51fac9ae73f1f10a33ea0454be92fef3b7044db2c3bd"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 70
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 247
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "33cb7636888323dee1f402fbcc2f3241cc738053bf48e7427036eeb874f727a0"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 66
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "api"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 256
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "233f7cacbc25ecd31afa30144a9c1bd01f96c004c130e4f0161c60b704767790"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 68
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "worker-a"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 258
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "a59210aeaba473bbf9eaf5f626b09b839a90f973d292f7e88c72df1fa7a4c511"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 105
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "worker-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 296
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{.Image}}",
+        "2472b87e83ca35e2f4617dd18bc9803bf65f6396c0deccdb7cac15a2fba26f96"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 72
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT current_user AS current_user, current_setting('transaction_read_only') AS transaction_read_only) AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 69
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_catalog.pg_roles WHERE rolname = current_user) AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 69
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 76
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 76
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 74
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 74
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 68
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 207
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT privilege FROM (VALUES ('CREATE'), ('TEMP')) AS p(privilege) WHERE has_database_privilege(current_user, current_database(), privilege)) AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 76
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema = 'autocheck') AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 104
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT c.relname AS table_name, c.relkind FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'autocheck') AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 68
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT contract_version, generated_at FROM autocheck.contract_info) AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 75
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT flow_name, flow_version, status, is_active FROM autocheck.flow_versions WHERE flow_name IN ('payment-processing', 'payment-review')) AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 73
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT rolname, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls FROM pg_catalog.pg_roles WHERE rolname IN ('outbox_dispatcher', 'inbox_reconciler')) AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 72
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 72
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 77
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 72
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT r.role_name FROM (VALUES ('outbox_dispatcher'), ('inbox_reconciler')) AS r(role_name) WHERE has_database_privilege(r.role_name, current_database(), 'CREATE')) AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 73
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 73
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 75
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "api"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 273
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .NetworkSettings.Networks}}",
+        "233f7cacbc25ecd31afa30144a9c1bd01f96c004c130e4f0161c60b704767790"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 72
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "worker-a"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 248
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .NetworkSettings.Networks}}",
+        "a59210aeaba473bbf9eaf5f626b09b839a90f973d292f7e88c72df1fa7a4c511"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 82
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "worker-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 252
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .NetworkSettings.Networks}}",
+        "2472b87e83ca35e2f4617dd18bc9803bf65f6396c0deccdb7cac15a2fba26f96"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 68
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 246
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .NetworkSettings.Networks}}",
+        "85eb4f0372c5329065be3b1e1d6f2f5b05160e83969ae55ed927cec1571fe5a2"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 68
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "outbox-dispatcher-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 249
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .NetworkSettings.Networks}}",
+        "c79e1c626979d34f49a282b476a9505329aaeb80cbc7e44a4bb39c73eaf5d9c7"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 68
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 264
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .NetworkSettings.Networks}}",
+        "1020f349c5823375536f51fac9ae73f1f10a33ea0454be92fef3b7044db2c3bd"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 80
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "inbox-reconciler-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 307
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .NetworkSettings.Networks}}",
+        "33cb7636888323dee1f402fbcc2f3241cc738053bf48e7427036eeb874f727a0"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 76
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "ps",
+        "-q",
+        "receipt-adapter"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 279
+    },
+    {
+      "command": [
+        "docker",
+        "inspect",
+        "--format",
+        "{{json .NetworkSettings.Networks}}",
+        "4952bc10c3d61f653a8bf0748109a2d3e388bf814631441dbabc6833a656937f"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 76
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 92
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 94
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 94
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 95
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 96
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 95
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 91
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 93
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 96
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 97
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 98
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 95
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 94
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 103
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 89
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 77
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 78
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 74
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 78
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 96
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 96
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 97
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 94
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 96
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 90
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 88
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 84
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 80
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 80
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 83
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 85
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 86
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 94
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 98
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 82
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 86
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 87
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 81
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 72
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 78
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 82
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 79
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 76
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 85
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 76
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 86
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 73
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "stop",
+        "outbox-dispatcher",
+        "outbox-dispatcher-b"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 1186
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "stop",
+        "provider-simulator"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 780
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "up",
+        "-d",
+        "--no-build",
+        "--no-deps",
+        "outbox-dispatcher"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 1005
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "stop",
+        "outbox-dispatcher"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 855
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT external_request_id, operation_id, state, payload_hash FROM autocheck.external_requests WHERE operation_id = '75ea6f71-6ee8-4c18-8a5e-ab85173fa8d2'::uuid) AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 83
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT external_request_id, operation_id, state, payload_hash FROM autocheck.external_requests WHERE operation_id = '75ea6f71-6ee8-4c18-8a5e-ab85173fa8d2'::uuid) AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 90
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "SELECT COALESCE(jsonb_agg(to_jsonb(q)), '[]'::jsonb)::text FROM (SELECT external_request_id, operation_id, state, payload_hash FROM autocheck.external_requests WHERE operation_id = '75ea6f71-6ee8-4c18-8a5e-ab85173fa8d2'::uuid) AS q"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 86
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "up",
+        "-d",
+        "--no-build",
+        "--no-deps",
+        "outbox-dispatcher"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 1023
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 79
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 81
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 82
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 79
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 72
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "pause",
+        "outbox-dispatcher"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 287
+    },
+    {
+      "command": [
+        "psql",
+        "-X",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "autocheck_reader",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "52645",
+        "-d",
+        "course",
+        "-At",
+        "-c",
+        "[redacted-argument]"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 98
+    },
+    {
+      "command": [
+        "/home/pc/projects/week4/autocheck/safe_compose.sh",
+        "--project-name",
+        "week4-public-8a5aec24",
+        "-f",
+        "/home/pc/projects/week/docker-compose.yml",
+        "-f",
+        "/tmp/week4-check-b5qj5qoc/override.yaml",
+        "unpause",
+        "outbox-dispatcher"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "durationMs": 284
+    }
+  ]
+}

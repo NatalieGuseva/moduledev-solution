@@ -3,13 +3,7 @@
 # data-директории (/docker-entrypoint-initdb.d), от имени реального init
 # суперпользователя ($POSTGRES_USER). Больше никогда не выполняется на уже
 # существующей БД — поэтому именно здесь, а не в checksummed-миграциях,
-# заводятся LOGIN-роли course_migrator/course_publisher/course_runtime/
-# workflow_worker/outbox_dispatcher/inbox_reconciler: миграции — статичные
-# .sql файлы без доступа к env, а cli НЕ входит в allow-list checker'а для
-# COURSE_OUTBOX_PASSWORD/COURSE_INBOX_PASSWORD (checker проверяет, что
-# значение этих секретов встречается только в env postgres и
-# соответствующего python-сервиса — см. docs/configuration.md и
-# _secret_distribution_findings в чекере).
+# заводятся LOGIN-роли: миграции — статичные .sql файлы без доступа к env.
 set -euo pipefail
 
 : "${COURSE_MIGRATOR_PASSWORD:?COURSE_MIGRATOR_PASSWORD is required}"
@@ -18,14 +12,11 @@ set -euo pipefail
 : "${COURSE_WORKER_PASSWORD:?COURSE_WORKER_PASSWORD is required}"
 : "${COURSE_OUTBOX_PASSWORD:?COURSE_OUTBOX_PASSWORD is required}"
 : "${COURSE_INBOX_PASSWORD:?COURSE_INBOX_PASSWORD is required}"
+: "${COURSE_AUTOCHECK_PASSWORD:?COURSE_AUTOCHECK_PASSWORD is required}"
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
     -- ============================================================
     -- 1. course_owner — NOLOGIN-владелец всех объектов схем.
-    --    Создаём ПЕРВОЙ, потому что ниже идёт ALTER SCHEMA ...
-    --    OWNER TO course_owner — он требует, чтобы роль уже
-    --    существовала. 001_initial.sql тоже создаёт эту роль через
-    --    IF NOT EXISTS, поэтому повторное создание безопасно.
     -- ============================================================
     DO \$\$
     BEGIN
@@ -36,10 +27,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     \$\$;
 
     -- ============================================================
-    -- 2. course_migrator — LOGIN + CREATEROLE. Под ней cli делает
-    --    migration apply. CREATEROLE нужен, потому что миграции сами
-    --    создают роли (course_owner, course_runtime, workflow_worker,
-    --    outbox_dispatcher, inbox_reconciler).
+    -- 2. course_migrator — LOGIN + CREATEROLE.
     -- ============================================================
     DO \$\$
     BEGIN
@@ -51,16 +39,10 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     END
     \$\$;
 
-    -- migrator должен уметь SET ROLE course_owner. WITH ADMIN OPTION —
-    -- чтобы он мог в дальнейшем выдавать это членство другим ролям.
     GRANT course_owner TO course_migrator WITH ADMIN OPTION;
 
     -- ============================================================
-    -- 3. Схемы. 001_initial.sql тоже создаёт их через IF NOT EXISTS,
-    --    но не меняет владельца — если схему создали здесь под
-    --    postgres, то владельцем останется postgres, и
-    --    course_migrator не сможет в ней ничего делать. Поэтому
-    --    явно отдаём course_owner.
+    -- 3. Схемы + владелец.
     -- ============================================================
     CREATE SCHEMA IF NOT EXISTS course;
     CREATE SCHEMA IF NOT EXISTS opencheck;
@@ -77,10 +59,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     ALTER SCHEMA training OWNER TO course_owner;
 
     -- ============================================================
-    -- 4. Default privileges для будущих объектов (создаваемых
-    --    postgres — тем же подключением, что init-скрипт и фикстуры
-    --    checker'а). Любая таблица в course/opencheck/payment и
-    --    любая новая схема автоматически получают course_owner.
+    -- 4. Default privileges.
     -- ============================================================
     ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA course, opencheck, payment
         GRANT ALL PRIVILEGES ON TABLES TO course_owner;
@@ -90,7 +69,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
         GRANT USAGE ON SCHEMAS TO course_owner;
 
     -- ============================================================
-    -- 5. course_publisher — под ней cli action/flow publish.
+    -- 5. course_publisher.
     -- ============================================================
     DO \$\$
     BEGIN
@@ -103,7 +82,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     \$\$;
 
     -- ============================================================
-    -- 6. course_runtime — LOGIN-роль C# API. Least-privilege.
+    -- 6. course_runtime.
     -- ============================================================
     DO \$\$
     BEGIN
@@ -116,7 +95,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     \$\$;
 
     -- ============================================================
-    -- 7. workflow_worker — LOGIN-роль C# worker'ов.
+    -- 7. workflow_worker.
     -- ============================================================
     DO \$\$
     BEGIN
@@ -129,7 +108,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     \$\$;
 
     -- ============================================================
-    -- 8. outbox_dispatcher / inbox_reconciler — LOGIN-роли Python.
+    -- 8. outbox_dispatcher / inbox_reconciler.
     -- ============================================================
     DO \$\$
     BEGIN
@@ -152,21 +131,38 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     \$\$;
 
     -- ============================================================
-    -- 9. pgcrypto (public).
-    --
-    --    ВАЖНО: CREATE EXTENSION делаем ЗДЕСЬ, до REVOKE, а не в
-    --    001_initial.sql. Иначе функции расширения создаёт
-    --    course_migrator уже после init-скрипта, и наш REVOKE PUBLIC
-    --    оказывается не на что наложить (функций ещё нет) —
-    --    pgcrypto остаётся доступна PUBLIC, и outbox_dispatcher /
-    --    inbox_reconciler получают лишний EXECUTE на digest/hmac/
-    --    gen_random_uuid/... Checker недели 3 требует, чтобы у них
-    --    был EXECUTE РОВНО на 4 функции delivery.*.
-    --
-    --    public принадлежит postgres — course_migrator туда не
-    --    достаёт, поэтому REVOKE делаем здесь, под postgres.
-    --    001_initial.sql использует CREATE EXTENSION IF NOT EXISTS,
-    --    так что повторное создание — no-op.
+    -- 9. autocheck_reader — LOGIN-роль checker'а. Read-only доступ
+    --    ТОЛЬКО к views schema autocheck. GRANT'ы на views выдаются
+    --    отдельной миграцией 019 (после того, как views созданы),
+    --    потому что на момент bootstrap схема autocheck ещё не
+    --    существует.
+    -- ============================================================
+    DO \$\$
+    BEGIN
+        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'autocheck_reader') THEN
+            CREATE ROLE autocheck_reader WITH LOGIN PASSWORD '$COURSE_AUTOCHECK_PASSWORD';
+        ELSE
+            ALTER ROLE autocheck_reader WITH LOGIN PASSWORD '$COURSE_AUTOCHECK_PASSWORD';
+        END IF;
+    END
+    \$\$;
+
+    -- Defence-in-depth: никаких лишних атрибутов, никаких default-прав
+    -- на public. USAGE/SELECT на autocheck.* выдаются миграцией 019.
+    ALTER ROLE autocheck_reader NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;
+    REVOKE ALL ON DATABASE "$POSTGRES_DB" FROM autocheck_reader;
+    GRANT CONNECT ON DATABASE "$POSTGRES_DB" TO autocheck_reader;
+    REVOKE ALL ON SCHEMA public FROM autocheck_reader;
+     -- TEMP по умолчанию выдан роли PUBLIC на каждую базу. Роль
+    -- autocheck_reader наследует его через PUBLIC, и простое
+    -- REVOKE ALL ... FROM autocheck_reader это НЕ отменяет — нужен
+    -- явный отзыв у PUBLIC. Checker проверяет именно
+    -- has_database_privilege(current_user, current_database(), 'TEMP'),
+    -- который считает эффективную привилегию с учётом PUBLIC.
+    REVOKE TEMP ON DATABASE "$POSTGRES_DB" FROM PUBLIC;
+
+    -- ============================================================
+    -- 10. pgcrypto (public).
     -- ============================================================
     CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -177,11 +173,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
         TO course_owner, course_migrator, course_publisher;
 
     -- ============================================================
-    -- 10. course_migrator должен владеть базой — иначе CREATE SCHEMA/
-    --     EXTENSION внутри миграций упадёт (PG15+ запрещает CREATE
-    --     на базе всем, кроме владельца и суперпользователя).
+    -- 11. course_migrator — владелец базы.
     -- ============================================================
     ALTER DATABASE "$POSTGRES_DB" OWNER TO course_migrator;
 EOSQL
 
-echo "course_owner / course_migrator / course_publisher / course_runtime / workflow_worker / outbox_dispatcher / inbox_reconciler bootstrap complete"
+echo "course_owner / course_migrator / course_publisher / course_runtime / workflow_worker / outbox_dispatcher / inbox_reconciler / autocheck_reader bootstrap complete"

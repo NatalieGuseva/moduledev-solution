@@ -8,17 +8,19 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${COURSE_POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-course}
-      # Пароли для LOGIN-ролей, которые создаёт
-      # postgres-init/00-bootstrap-roles.sh при первой инициализации тома.
-      # Роли course_runtime и workflow_worker тоже заводятся там — до этого
-      # они либо отсутствуют, либо NOLOGIN (создаются миграциями 001/005
-      # как NOLOGIN, поэтому bootstrap-скрипт явно даёт им LOGIN и пароль).
       COURSE_MIGRATOR_PASSWORD: ${COURSE_MIGRATOR_PASSWORD:-course_migrator_pw}
       COURSE_PUBLISHER_PASSWORD: ${COURSE_PUBLISHER_PASSWORD:-course_publisher_pw}
       COURSE_RUNTIME_PASSWORD: ${COURSE_RUNTIME_PASSWORD:-course_runtime_pw}
       COURSE_WORKER_PASSWORD: ${COURSE_WORKER_PASSWORD:-workflow_worker_pw}
       COURSE_OUTBOX_PASSWORD: ${COURSE_OUTBOX_PASSWORD:-outbox_dispatcher_pw}
       COURSE_INBOX_PASSWORD: ${COURSE_INBOX_PASSWORD:-inbox_reconciler_pw}
+      COURSE_AUTOCHECK_PASSWORD: ${COURSE_AUTOCHECK_PASSWORD}
+      COURSE_OUTBOX_MAX_ATTEMPTS: ${COURSE_OUTBOX_MAX_ATTEMPTS:-4}
+      COURSE_OUTBOX_BACKOFF_BASE_MS: ${COURSE_OUTBOX_BACKOFF_BASE_MS:-200}
+      COURSE_OUTBOX_BACKOFF_MAX_MS: ${COURSE_OUTBOX_BACKOFF_MAX_MS:-800}
+      COURSE_OUTBOX_JITTER_MAX_MS: ${COURSE_OUTBOX_JITTER_MAX_MS:-100}
+      COURSE_OUTBOX_LEASE_MS: ${COURSE_OUTBOX_LEASE_MS:-2000}
+      COURSE_JOB_LEASE_MS: ${COURSE_JOB_LEASE_MS:-2000}
     volumes:
       - course_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -37,18 +39,11 @@ services:
     container_name: moduldev-cli
     restart: "no"
     environment:
-      # cli делает и migration apply (entrypoint.sh), и action/flow publish
-      # по прямому запросу checker'а. Ему нужна одна строка подключения,
-      # покрывающая обе роли, — course_migrator покрывает всё (CREATEROLE +
-      # владелец БД), а course_publisher имеет только точечный DML.
       - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=course_migrator;Password=${COURSE_MIGRATOR_PASSWORD:-course_migrator_pw}
+      - COURSE_PUBLISHER_PASSWORD=${COURSE_PUBLISHER_PASSWORD}
       - COURSE_JWT_ISSUER=${COURSE_JWT_ISSUER}
       - COURSE_JWT_AUDIENCE=${COURSE_JWT_AUDIENCE}
       - COURSE_JWT_SIGNING_KEY=${COURSE_JWT_SIGNING_KEY}
-      # Cli/Program.cs читает это имя, чтобы выставить пароль роли
-      # workflow_worker при bootstrap (ALTER ROLE ... WITH LOGIN PASSWORD).
-      # postgres-init тоже создаёт эту роль с паролем COURSE_WORKER_PASSWORD —
-      # оба идемпотентны, значения совпадают.
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
     depends_on:
       postgres:
@@ -75,10 +70,9 @@ services:
       - COURSE_JWT_AUDIENCE=${COURSE_JWT_AUDIENCE}
       - COURSE_JWT_SIGNING_KEY=${COURSE_JWT_SIGNING_KEY}
       - PROVIDER_HMAC_SECRET=${PROVIDER_HMAC_SECRET}
-      # api ходит под least-privilege ролью course_runtime (docs/configuration.md).
-      # Роль создаётся postgres-init с LOGIN и паролем COURSE_RUNTIME_PASSWORD.
       - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=course_runtime;Password=${COURSE_RUNTIME_PASSWORD:-course_runtime_pw}
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
+      - COURSE_FAILPOINT=${COURSE_FAILPOINT:-}
     expose:
       - "8080"
     depends_on:
@@ -101,6 +95,9 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://0.0.0.0:8080
       - Api__Url=http://api:8080
+      - COURSE_JWT_ISSUER=${COURSE_JWT_ISSUER}
+      - COURSE_JWT_AUDIENCE=${COURSE_JWT_AUDIENCE}
+      - COURSE_JWT_SIGNING_KEY=${COURSE_JWT_SIGNING_KEY}
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
     depends_on:
       api:
@@ -115,11 +112,22 @@ services:
       context: .
       dockerfile: Workflow.Worker/Dockerfile
     container_name: moduldev-worker-a
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
     environment:
       - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=workflow_worker;Password=${COURSE_WORKER_PASSWORD:-workflow_worker_pw}
+      - COURSE_JWT_ISSUER=${COURSE_JWT_ISSUER}
+      - COURSE_JWT_AUDIENCE=${COURSE_JWT_AUDIENCE}
+      - COURSE_JWT_SIGNING_KEY=${COURSE_JWT_SIGNING_KEY}
+      - COURSE_JOB_LEASE_MS=${COURSE_JOB_LEASE_MS:-2000}
+      - COURSE_WORKER_POLL_MS=${COURSE_WORKER_POLL_MS:-100}
       - COURSE_INSTANCE_ID=worker-a
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
       - COURSE_FAILPOINT=${COURSE_FAILPOINT:-}
+      - COURSE_HEALTH_PORT=8080
     depends_on:
       postgres:
         condition: service_healthy
@@ -135,11 +143,22 @@ services:
       context: .
       dockerfile: Workflow.Worker/Dockerfile
     container_name: moduldev-worker-b
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
     environment:
       - ConnectionStrings__CourseDb=Host=postgres;Database=${POSTGRES_DB:-course};Username=workflow_worker;Password=${COURSE_WORKER_PASSWORD:-workflow_worker_pw}
+      - COURSE_JWT_ISSUER=${COURSE_JWT_ISSUER}
+      - COURSE_JWT_AUDIENCE=${COURSE_JWT_AUDIENCE}
+      - COURSE_JWT_SIGNING_KEY=${COURSE_JWT_SIGNING_KEY}
+      - COURSE_JOB_LEASE_MS=${COURSE_JOB_LEASE_MS:-2000}
+      - COURSE_WORKER_POLL_MS=${COURSE_WORKER_POLL_MS:-100}
       - COURSE_INSTANCE_ID=worker-b
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
       - COURSE_FAILPOINT=${COURSE_FAILPOINT:-}
+      - COURSE_HEALTH_PORT=8080
     depends_on:
       postgres:
         condition: service_healthy
@@ -156,14 +175,63 @@ services:
       dockerfile: Dockerfile
     container_name: moduldev-outbox-dispatcher
     command: ["dispatcher"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/health/live', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
     environment:
       - COURSE_OUTBOX_USER=outbox_dispatcher
       - COURSE_OUTBOX_PASSWORD=${COURSE_OUTBOX_PASSWORD:-outbox_dispatcher_pw}
       - PGUSER=outbox_dispatcher
       - PGPASSWORD=${COURSE_OUTBOX_PASSWORD:-outbox_dispatcher_pw}
-      - OUTBOX_OWNER=outbox-dispatcher
+      - OUTBOX_OWNER=${OUTBOX_OWNER:-outbox-dispatcher}
+      - COURSE_PROVIDER_TIMEOUT_MS=${COURSE_PROVIDER_TIMEOUT_MS:-500}
+      - COURSE_OUTBOX_MAX_ATTEMPTS=${COURSE_OUTBOX_MAX_ATTEMPTS:-4}
+      - COURSE_OUTBOX_LEASE_MS=${COURSE_OUTBOX_LEASE_MS:-2000}
+      - COURSE_OUTBOX_POLL_MS=${COURSE_OUTBOX_POLL_MS:-100}
       - PROVIDER_URL=${PROVIDER_URL:-http://provider-simulator:8081}
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
+      - COURSE_INSTANCE_ID=outbox-dispatcher
+      - COURSE_FAILPOINT=${COURSE_FAILPOINT:-}
+      - COURSE_HEALTH_PORT=8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cli:
+        condition: service_completed_successfully
+    networks:
+      - moduldev-network
+    restart: unless-stopped
+
+  outbox-dispatcher-b:
+    image: moduledev-python:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: moduldev-outbox-dispatcher-b
+    command: ["dispatcher"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/health/live', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    environment:
+      - COURSE_OUTBOX_USER=outbox_dispatcher
+      - COURSE_OUTBOX_PASSWORD=${COURSE_OUTBOX_PASSWORD:-outbox_dispatcher_pw}
+      - PGUSER=outbox_dispatcher
+      - PGPASSWORD=${COURSE_OUTBOX_PASSWORD:-outbox_dispatcher_pw}
+      - OUTBOX_OWNER=${OUTBOX_OWNER_B:-outbox-dispatcher-b}
+      - OUTBOX_OWNER_B=${OUTBOX_OWNER_B:-outbox-dispatcher-b}
+      - COURSE_PROVIDER_TIMEOUT_MS=${COURSE_PROVIDER_TIMEOUT_MS:-500}
+      - COURSE_OUTBOX_MAX_ATTEMPTS=${COURSE_OUTBOX_MAX_ATTEMPTS:-4}
+      - COURSE_OUTBOX_LEASE_MS=${COURSE_OUTBOX_LEASE_MS:-2000}
+      - COURSE_OUTBOX_POLL_MS=${COURSE_OUTBOX_POLL_MS:-100}
+      - PROVIDER_URL=${PROVIDER_URL:-http://provider-simulator:8081}
+      - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
+      - COURSE_INSTANCE_ID=outbox-dispatcher-b
+      - COURSE_FAILPOINT=${COURSE_FAILPOINT:-}
+      - COURSE_HEALTH_PORT=8080
     depends_on:
       postgres:
         condition: service_healthy
@@ -177,12 +245,18 @@ services:
     image: moduledev-python:latest
     container_name: moduldev-receipt-adapter
     command: ["adapter"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:8082/health/live', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
     environment:
       - PROVIDER_CALLBACK_CAPABILITY=${PROVIDER_CALLBACK_CAPABILITY}
       - PROVIDER_CALLBACK_TOKEN=${PROVIDER_CALLBACK_TOKEN}
       - PROVIDER_HMAC_SECRET=${PROVIDER_HMAC_SECRET}
       - RECEIPT_API_URL=${RECEIPT_API_URL:-http://gateway:8080/api/receipt/accept}
-      - RECEIPT_ADAPTER_PORT=8080
+      - RECEIPT_ADAPTER_PORT=8082
+      - GATEWAY_URL=${GATEWAY_URL:-http://gateway:8080}
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
     depends_on:
       gateway:
@@ -195,12 +269,49 @@ services:
     image: moduledev-python:latest
     container_name: moduldev-inbox-reconciler
     command: ["reconciler"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/health/live', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
     environment:
       - COURSE_INBOX_USER=inbox_reconciler
       - COURSE_INBOX_PASSWORD=${COURSE_INBOX_PASSWORD:-inbox_reconciler_pw}
       - PGUSER=inbox_reconciler
       - PGPASSWORD=${COURSE_INBOX_PASSWORD:-inbox_reconciler_pw}
+      - COURSE_INBOX_POLL_MS=${COURSE_INBOX_POLL_MS:-500}
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
+      - COURSE_INSTANCE_ID=inbox-reconciler
+      - COURSE_FAILPOINT=${COURSE_FAILPOINT:-}
+      - COURSE_HEALTH_PORT=8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cli:
+        condition: service_completed_successfully
+    networks:
+      - moduldev-network
+    restart: unless-stopped
+
+  inbox-reconciler-b:
+    image: moduledev-python:latest
+    container_name: moduldev-inbox-reconciler-b
+    command: ["reconciler"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:8080/health/live', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    environment:
+      - COURSE_INBOX_USER=inbox_reconciler
+      - COURSE_INBOX_PASSWORD=${COURSE_INBOX_PASSWORD:-inbox_reconciler_pw}
+      - PGUSER=inbox_reconciler
+      - PGPASSWORD=${COURSE_INBOX_PASSWORD:-inbox_reconciler_pw}
+      - COURSE_INBOX_POLL_MS=${COURSE_INBOX_POLL_MS:-500}
+      - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
+      - COURSE_INSTANCE_ID=inbox-reconciler-b
+      - COURSE_FAILPOINT=${COURSE_FAILPOINT:-}
+      - COURSE_HEALTH_PORT=8080
     depends_on:
       postgres:
         condition: service_healthy
@@ -214,7 +325,7 @@ services:
     image: ghcr.io/fintech-dev-lab/internship-provider-simulator:v0.2.0@sha256:70e5e0dd9ab8425be84de431ec74516f9bedf5d5529077358e2e2b2037fe0c74
     container_name: moduldev-provider-simulator
     environment:
-      - CALLBACK_URL=http://receipt-adapter:8080/callbacks/provider-v02/${PROVIDER_CALLBACK_CAPABILITY}
+      - CALLBACK_URL=http://receipt-adapter:8082/callbacks/provider-v02/${PROVIDER_CALLBACK_CAPABILITY}
       - AUDIT_TOKEN=${PROVIDER_AUDIT_TOKEN:-audit_token_123}
       - COURSE_TEST_PROFILE=${COURSE_TEST_PROFILE:-1}
     networks:

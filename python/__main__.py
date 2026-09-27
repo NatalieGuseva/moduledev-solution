@@ -1,101 +1,110 @@
 # python/__main__.py
-import logging
-import sys
 import asyncio
+import logging
+import signal
+import sys
 
-from .config import DatabaseConfig, DispatcherConfig, ProviderConfig, AdapterConfig
+from .config import AdapterConfig, DatabaseConfig, DispatcherConfig, ProviderConfig, ReconcilerConfig, RuntimeProfile
 from .outbox_dispatcher import OutboxDispatcher
-from .receipt_adapter import ReceiptAdapter
 from .inbox_reconciler import InboxReconciler
+from .receipt_adapter import ReceiptAdapter
+from .observability import configure_json_logging, log_event
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
 
 
-def run_dispatcher() -> None:
-    """Entrypoint для outbox-dispatcher."""
-    logger.info("Starting outbox-dispatcher")
+async def _run_with_graceful_shutdown(component, start_coro) -> None:
+    """Общий SIGTERM-обработчик для dispatcher/reconciler — соединения из
+    пула берутся на каждую итерацию, поэтому просто просим цикл
+    остановиться и дожидаемся текущей итерации."""
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
 
+    def _on_signal() -> None:
+        stop_event.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _on_signal)
+
+    run_task = asyncio.create_task(start_coro)
+    stop_task = asyncio.create_task(stop_event.wait())
+
+    done, pending = await asyncio.wait({run_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
+
+    await component.stop()
+
+    if run_task in pending:
+        run_task.cancel()
+        try:
+            await run_task
+        except asyncio.CancelledError:
+            pass
+
+    if run_task in done and run_task.exception():
+        raise run_task.exception()
+
+
+async def run_dispatcher() -> None:
+    profile = RuntimeProfile.from_env(default_instance_id="outbox-dispatcher", default_health_port=8090)
     db_config = DatabaseConfig.from_env("COURSE_OUTBOX")
-    dispatcher_config = DispatcherConfig.from_env()
-    provider_config = ProviderConfig.from_env()
+    provider_config = ProviderConfig.from_env(test_profile=profile.test_profile)
+    dispatcher_config = DispatcherConfig.from_env(test_profile=profile.test_profile)
 
-    dispatcher = OutboxDispatcher(db_config, dispatcher_config, provider_config)
-
-    try:
-        asyncio.run(dispatcher.start())
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")
-        asyncio.run(dispatcher.stop())
+    dispatcher = OutboxDispatcher(db_config, provider_config, dispatcher_config, profile)
+    await _run_with_graceful_shutdown(dispatcher, dispatcher.start())
 
 
-def run_adapter() -> None:
-    """
-    Entrypoint для receipt-adapter.
+async def run_reconciler() -> None:
+    profile = RuntimeProfile.from_env(default_instance_id="inbox-reconciler", default_health_port=8091)
+    db_config = DatabaseConfig.from_env("COURSE_INBOX")
+    reconciler_config = ReconcilerConfig.from_env(test_profile=profile.test_profile)
 
-    adapter.start() запускает aiohttp web.AppRunner и сразу возвращает
-    управление, поэтому одного asyncio.run(adapter.start()) недостаточно —
-    процесс завершится, и контейнер уйдёт в Restarting.
+    reconciler = InboxReconciler(db_config, reconciler_config, profile)
+    await _run_with_graceful_shutdown(reconciler, reconciler.start())
 
-    Правильный приём: создать event loop, запустить корутину через
-    run_until_complete(), и затем держать loop живым через run_forever().
-    В Python 3.12 asyncio.get_event_loop() без активного loop падает с
-    RuntimeError — поэтому используем asyncio.new_event_loop() явно.
 
-    Порт adapter'а НЕ передаётся здесь аргументом: ReceiptAdapter.start()
-    сам читает RECEIPT_ADAPTER_PORT (дефолт 8080), чтобы совпасть с
-    CALLBACK_URL у provider-simulator'а (http://receipt-adapter:8080/...).
-    """
-    logger.info("Starting receipt-adapter")
-
+async def run_adapter() -> None:
     adapter_config = AdapterConfig.from_env()
     adapter = ReceiptAdapter(adapter_config)
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    await adapter.start()
 
-    try:
-        # Без аргумента port — ReceiptAdapter.start() возьмёт
-        # RECEIPT_ADAPTER_PORT (дефолт 8080), согласованный с CALLBACK_URL.
-        loop.run_until_complete(adapter.start())
-        loop.run_forever()
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")
-        loop.run_until_complete(adapter.stop())
-    finally:
-        loop.close()
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, stop_event.set)
+
+    await stop_event.wait()
+    await adapter.stop()
 
 
-def run_reconciler() -> None:
-    """Entrypoint для inbox-reconciler."""
-    logger.info("Starting inbox-reconciler")
+def main() -> None:
+    component = sys.argv[1] if len(sys.argv) > 1 else "dispatcher"
 
-    db_config = DatabaseConfig.from_env("COURSE_INBOX")
-    reconciler = InboxReconciler(db_config)
+    # service_name в JSON-логах различает outbox-dispatcher / -b и
+    # inbox-reconciler / -b (см. пример лога dispatcher'а в задании:
+    # "service": "outbox-dispatcher-b"). COURSE_INSTANCE_ID
+    # (docker-compose.yml) или OUTBOX_OWNER — то, что реально задаёт
+    # владельца lease в PostgreSQL, поэтому имя сервиса в логах и
+    # значение owner в БД совпадают.
+    import os
+    service_name = (
+        os.environ.get("COURSE_INSTANCE_ID")
+        or os.environ.get("OUTBOX_OWNER")
+        or component
+    )
+    configure_json_logging(service_name=service_name)
 
-    try:
-        asyncio.run(reconciler.start())
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")
-        asyncio.run(reconciler.stop())
+    if component == "dispatcher":
+        asyncio.run(run_dispatcher())
+    elif component == "reconciler":
+        asyncio.run(run_reconciler())
+    elif component == "adapter":
+        asyncio.run(run_adapter())
+    else:
+        log_event(logger, logging.CRITICAL, "startup.unknown_component", component=component)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python -m python <dispatcher|adapter|reconciler>")
-        sys.exit(1)
-
-    command = sys.argv[1]
-
-    if command == "dispatcher":
-        run_dispatcher()
-    elif command == "adapter":
-        run_adapter()
-    elif command == "reconciler":
-        run_reconciler()
-    else:
-        print(f"Unknown command: {command}")
-        sys.exit(1)
+    main()

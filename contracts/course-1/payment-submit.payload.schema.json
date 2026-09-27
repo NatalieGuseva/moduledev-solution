@@ -5,6 +5,9 @@
   "additionalProperties": false,
   "required": ["operationId"],
   "properties": {
-    "operationId": {"type": "string", "format": "uuid"}
+    "operationId": {
+      "type": "string",
+      "format": "uuid"
+    }
   }
 }

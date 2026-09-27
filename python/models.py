@@ -61,11 +61,12 @@ class ProviderCallback:
     message: str
     occurred_at: str
 
-    # Поля, обязательные по provider-v02-callback.schema.json.
-    # message не входит: он валидируется по типу/размеру и отбрасывается,
-    # но сам по себе не обязателен для непустого callback'а — по контракту
-    # v0.2.0 он присутствует всегда, но мы допускаем его отсутствие как "".
-    REQUIRED_FIELDS = ("providerPaymentId", "operationId", "result", "occurredAt")
+    # FIX (неделя 4, фидбэк недели 3 "Legacy callback validation допускает
+    # отсутствующий message"): все ПЯТЬ полей legacy-схемы теперь обязательны,
+    # message в том числе — provider-v02-callback.schema.json требует его
+    # всегда присутствующим для непустого callback'а; раньше он был выведен
+    # из REQUIRED_FIELDS и молча заменялся на "" при отсутствии.
+    REQUIRED_FIELDS = ("providerPaymentId", "operationId", "result", "message", "occurredAt")
     ALLOWED_FIELDS = {
         "providerPaymentId", "operationId", "result", "message", "occurredAt"
     }
@@ -85,6 +86,10 @@ class ProviderCallback:
         if missing:
             raise ValueError(f"Missing required fields: {sorted(missing)}")
 
+        # message обязателен, но пустая строка "" — валидное значение по
+        # схеме (не отсутствие поля), поэтому здесь только CR/LF-проверка,
+        # без "message не найден -> ''" — эта ветка теперь не нужна.
+
         # Проверка CR/LF в строковых полях
         for field in ("providerPaymentId", "operationId", "occurredAt", "message"):
             value = data.get(field)
@@ -95,7 +100,7 @@ class ProviderCallback:
             provider_payment_id=data["providerPaymentId"],
             operation_id=data["operationId"],
             result=data["result"],
-            message=data.get("message", ""),
+            message=data["message"],
             occurred_at=data["occurredAt"]
         )
 

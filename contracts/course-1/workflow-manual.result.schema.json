@@ -3,7 +3,14 @@
   "$id": "urn:course:course-1:workflow-manual-result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["decisionId", "processId", "stepInstanceId", "decision", "source", "principal"],
+  "required": [
+    "decisionId",
+    "processId",
+    "stepInstanceId",
+    "decision",
+    "source",
+    "principal"
+  ],
   "properties": {
     "decisionId": {"type": "string", "format": "uuid"},
     "processId": {"type": "string", "format": "uuid"},

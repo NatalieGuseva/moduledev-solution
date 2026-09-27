@@ -1,13 +1,14 @@
 # python/outbox_dispatcher.py
 import asyncio
 import logging
+import time
 from typing import Optional
 from uuid import UUID
 
-from .config import DispatcherConfig, ProviderConfig, DatabaseConfig
+from .config import DatabaseConfig, DispatcherConfig, ProviderConfig, RuntimeProfile
 from .db import DatabaseClient
 from .provider_client import ProviderClient
-from .models import OutboxClaim
+from .observability import Failpoint, HealthServer, log_event
 
 logger = logging.getLogger(__name__)
 
@@ -17,101 +18,127 @@ class OutboxDispatcher:
     Python outbox-dispatcher.
 
     Роль: outbox_dispatcher
-    Доступ: только EXECUTE на delivery.claim/succeed/fail_outbox
+    Доступ: только EXECUTE на delivery.claim_outbox/succeed_outbox/fail_outbox.
     Не имеет прямого DML доступа к таблицам.
+
+    Неделя 4: может запускаться в двух экземплярах одновременно
+    (outbox-dispatcher / outbox-dispatcher-b в docker-compose.yml) — claim
+    короткой транзакцией с owner+leaseVersion в PostgreSQL делает второй
+    экземпляр безопасным по конструкции, не по конвенции (см.
+    011_delivery_functions.sql: FOR UPDATE SKIP LOCKED + условное
+    succeed/fail по owner+leaseVersion).
     """
 
     def __init__(
         self,
         db_config: DatabaseConfig,
+        provider_config: ProviderConfig,
         dispatcher_config: DispatcherConfig,
-        provider_config: ProviderConfig
+        profile: RuntimeProfile,
     ):
         self._db = DatabaseClient(db_config)
         self._provider = ProviderClient(provider_config)
         self._owner = dispatcher_config.owner
+        self._poll_interval = dispatcher_config.poll_interval_seconds
         self._claim_limit = dispatcher_config.claim_limit
         self._running = False
+        self._failpoint = Failpoint(profile.test_profile, profile.failpoint, profile.instance_id, logger)
+        self._health = HealthServer(self._is_ready, profile.health_port, logger)
+
+    async def _is_ready(self) -> bool:
+        try:
+            return await self._db.ping()
+        except Exception:
+            return False
 
     async def start(self) -> None:
-        """Запускает цикл обработки Outbox."""
+        """Запускает цикл dispatch."""
         await self._db.connect()
+        await self._health.start()
         self._running = True
 
-        logger.info(f"OutboxDispatcher started (owner={self._owner})")
+        log_event(logger, logging.INFO, "dispatcher.started", owner=self._owner)
 
-        try:
-            while self._running:
-                try:
-                    claims = await self._db.claim_outbox(self._owner, self._claim_limit)
+        while self._running:
+            try:
+                claims = await self._db.claim_outbox(self._owner, self._claim_limit)
+                await self._failpoint.hit("after_outbox_claim")
 
-                    for claim in claims:
-                        await self._process_claim(claim)
+                if claims:
+                    await asyncio.gather(*(self._process_claim(claim) for claim in claims))
+                else:
+                    await asyncio.sleep(self._poll_interval)
 
-                    if not claims:
-                        await asyncio.sleep(0.5)
+            except Exception as e:
+                log_event(logger, logging.ERROR, "dispatcher.loop_error", error=str(type(e).__name__))
+                await asyncio.sleep(1)
 
-                except Exception as e:
-                    logger.error(f"Error in dispatcher loop: {e}", exc_info=True)
-                    await asyncio.sleep(1)
-        finally:
-            # Гарантированно закрываем pool при выходе из цикла
-            # (штатная остановка, ошибка, отмена). Без finally тест
-            # test_dispatcher_main_loop не дожидается close().
-            await self._db.close()
-            logger.info("OutboxDispatcher loop exited")
+    async def _process_claim(self, claim) -> None:
+        """Обрабатывает одну захваченную запись Outbox."""
+        log_event(
+            logger, logging.INFO, "outbox.claimed",
+            outboxId=str(claim.outbox_id), owner=self._owner,
+            leaseVersion=claim.lease_version, externalRequestId=claim.external_request_id,
+            correlationId=str(claim.correlation_id),
+        )
 
-    async def stop(self) -> None:
-        """Останавливает dispatcher.
+        started = time.monotonic()
+        response = await self._provider.send_payment(
+            operation_id=claim.external_request_id,
+            amount=claim.amount,
+            currency=claim.currency,
+            correlation_id=claim.correlation_id
+        )
+        duration_ms = int((time.monotonic() - started) * 1000)
 
-        Сам цикл закрывает соединение в finally. Этот метод только
-        сигнализирует циклу выйти — повторный close() не нужен и
-        приводил бы к двойному закрытию pool.
-        """
-        self._running = False
-        logger.info("OutboxDispatcher stop requested")
+        await self._failpoint.hit("after_provider_response")
 
-    async def _process_claim(self, claim: OutboxClaim) -> None:
-        """
-        Обрабатывает один Outbox claim.
-        Один claim = одна HTTP попытка к провайдеру.
-        """
-        logger.info(f"Processing claim: {claim.outbox_id}, request={claim.external_request_id}")
-
-        try:
-            # Отправка запроса к провайдеру
-            response = await self._provider.send_payment(
-                operation_id=claim.external_request_id,
-                amount=claim.amount,
-                currency=claim.currency,
-                correlation_id=claim.correlation_id
+        if response.is_success:
+            log_event(
+                logger, logging.INFO, "provider.response.received",
+                outboxId=str(claim.outbox_id), httpStatus=response.status, durationMs=duration_ms,
             )
-
-            if response.is_success:
-                # Успешное принятие
-                await self._db.succeed_outbox(
-                    outbox_id=claim.outbox_id,
-                    owner=self._owner,
-                    lease_version=claim.lease_version,
-                    provider_payment_id=response.provider_payment_id
-                )
-                logger.info(f"Outbox succeeded: {claim.outbox_id}")
-            else:
-                # Ошибка (retryable или terminal)
-                await self._db.fail_outbox(
-                    outbox_id=claim.outbox_id,
-                    owner=self._owner,
-                    lease_version=claim.lease_version,
-                    error_code=response.error_code
-                )
-                logger.warning(f"Outbox failed: {claim.outbox_id}, error={response.error_code}")
-
-        except Exception as e:
-            # Transport error или timeout
-            logger.error(f"Transport error for {claim.outbox_id}: {e}")
-            await self._db.fail_outbox(
+            await self._db.succeed_outbox(
                 outbox_id=claim.outbox_id,
                 owner=self._owner,
                 lease_version=claim.lease_version,
-                error_code="transport.error.retryable"
+                provider_payment_id=response.provider_payment_id
             )
+            log_event(logger, logging.INFO, "outbox.delivered", outboxId=str(claim.outbox_id))
+        else:
+            error_code = response.error_code
+            level = logging.WARNING if error_code.endswith(".retryable") else logging.ERROR
+            log_event(
+                logger, level, "provider.request.failed",
+                outboxId=str(claim.outbox_id), httpStatus=response.status,
+                errorCode=error_code, durationMs=duration_ms,
+            )
+            result = await self._db.fail_outbox(
+                outbox_id=claim.outbox_id,
+                owner=self._owner,
+                lease_version=claim.lease_version,
+                error_code=error_code
+            )
+            if isinstance(result, dict) and result.get("status") == "error":
+                # delivery.lease_stale — второй dispatcher (или reclaim
+                # после lease-expiry) уже забрал эту запись; наш ответ от
+                # provider — просроченная попытка, отбрасываем её молча.
+                log_event(logger, logging.WARNING, "delivery.lease_stale", outboxId=str(claim.outbox_id))
+                return
+            outbox_state = result.get("outboxState") if isinstance(result, dict) else None
+            if outbox_state == "DEAD":
+                log_event(logger, logging.ERROR, "outbox.dead", outboxId=str(claim.outbox_id), errorCode=error_code)
+            else:
+                log_event(
+                    logger, logging.WARNING, "outbox.retry.scheduled",
+                    outboxId=str(claim.outbox_id),
+                    nextAttemptDelayMs=(result or {}).get("nextAttemptDelayMs"),
+                )
+
+    async def stop(self) -> None:
+        """Останавливает dispatcher."""
+        self._running = False
+        await self._health.stop()
+        await self._provider.close()
+        await self._db.close()
+        log_event(logger, logging.INFO, "dispatcher.stopped")
