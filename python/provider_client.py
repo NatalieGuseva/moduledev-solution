@@ -32,10 +32,12 @@ class ProviderResponse:
     def provider_payment_id(self) -> str:
         return self.body.get("providerPaymentId", "")
     
+    
     @property
     def error_code(self) -> str:
-        """Код ошибки для fail_outbox согласно классификации."""
-        if self.status == 408:
+        if self.status == 0:                      # <-- добавлено
+            return "transport.error.retryable"
+        elif self.status == 408:
             return "http.408.retryable"
         elif self.status == 429:
             return "http.429.retryable"
@@ -44,7 +46,6 @@ class ProviderResponse:
         elif 400 <= self.status < 500:
             return f"http.{self.status}.terminal"
         else:
-            # Некорректный ответ
             return "response.invalid.terminal"
 
 
