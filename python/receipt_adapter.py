@@ -2,9 +2,9 @@
 import logging
 import os
 import time
-from typing import Optional
+from typing import Optional, Tuple
 import aiohttp
-from aiohttp import web, ClientSession, ClientTimeout, ClientResponse
+from aiohttp import web, ClientSession, ClientTimeout
 from aiohttp.web_response import Response
 
 from .config import AdapterConfig
@@ -108,11 +108,10 @@ class ReceiptAdapter:
 
         try:
             started = time.monotonic()
-            response = await self._send_to_gateway(receipt, body_bytes, signature)
+            status, response_body = await self._send_to_gateway(
+                receipt, body_bytes, signature
+            )
             duration_ms = int((time.monotonic() - started) * 1000)
-
-            status = response.status
-            response_body = await response.text()
 
             log_event(
                 logger, logging.INFO, "receipt.sent",
@@ -122,47 +121,74 @@ class ReceiptAdapter:
                 durationMs=duration_ms,
             )
 
+            # FIX (неделя 4): НЕ пробрасываем content_type от gateway через
+            # web.Response(content_type=...) — aiohttp запрещает charset
+            # в этом параметре и падает с ValueError на значении
+            # "application/json; charset=utf-8", которое gateway возвращает
+            # на 409 conflict (проверка adapter-conflicting-callback).
+            # Передаём Content-Type через headers — там charset допустим
+            # и просто выставляется как есть.
             return web.Response(
                 status=status,
                 body=response_body,
-                content_type=response.content_type
+                headers={"Content-Type": "application/json"},
             )
 
-        except Exception:
+        except Exception as e:
+            # FIX (неделя 4): раньше здесь был "except Exception:" без
+            # диагностики — в логах виднелось только "gateway.unavailable",
+            # без типа и текста ошибки, что делало диагностику невозможной.
+            # Теперь логируем тип исключения и его repr (только их, без
+            # тела запроса/HMAC/токенов).
             log_event(
                 logger, logging.ERROR, "gateway.unavailable",
                 externalRequestId=receipt.external_request_id,
                 messageId=receipt.message_id,
+                errorType=type(e).__name__,
+                error=repr(e),
             )
             return web.json_response(
                 {"status": "error", "code": "dependency.unavailable"},
-                status=503
+                status=503,
             )
 
     async def _send_to_gateway(
         self,
         receipt: ReceiptV1,
         body_bytes: bytes,
-        signature: str
-    ) -> ClientResponse:
-        """Отправляет receipt в generic C# API."""
+        signature: str,
+    ) -> Tuple[int, bytes]:
+        """Отправляет receipt в generic C# API.
+
+        FIX (неделя 4): раньше возвращался ClientResponse как есть, но
+        ClientSession закрывалась в `async with` при выходе из функции —
+        к моменту, когда вызывающий код пытался прочитать response.text(),
+        соединение было уже закрыто, и aiohttp бросал ClientConnectionError.
+        На первом/втором запросе это иногда проходило (TCP-буфер), но
+        на третьем (conflicting callback, 409 от gateway) гарантированно
+        ломалось — checker фиксировал adapter-conflicting-callback failed.
+
+        Теперь читаем status/body ЦЕЛИКОМ внутри `async with` — до того,
+        как сессия закроется — и возвращаем кортеж примитивов. Content-Type
+        от gateway НЕ пробрасываем: на 409 gateway отдаёт
+        "application/json; charset=utf-8", а web.Response(content_type=...)
+        запрещает charset и падает с ValueError.
+        """
         url = self._config.receipt_api_url
         headers = {
             "Authorization": f"Bearer {self._config.token}",
             "Content-Type": "application/json",
             "Idempotency-Key": receipt.message_id,
             "X-Action-Version": "1",
-            "X-Provider-Signature": signature
+            "X-Provider-Signature": signature,
         }
         # В лог не попадают url, Idempotency-Key, HMAC signature и тело
         # receipt — контракт логирования это прямо запрещает.
         timeout = ClientTimeout(total=10.0)
         async with ClientSession(timeout=timeout) as session:
-            return await session.post(
-                url,
-                data=body_bytes,  # exact bytes, не json
-                headers=headers
-            )
+            async with session.post(url, data=body_bytes, headers=headers) as resp:
+                body = await resp.read()
+                return resp.status, body
 
     async def start(
         self,
