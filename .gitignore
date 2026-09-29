@@ -1,37 +1,8 @@
+# ============================================================
+# Python
+# ============================================================
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.ruff_cache/
-week-3-public-report.json
-.env
-**/bin/
-**/obj/
-**/__pycache__/
-.idea/
-.vs/
-# Environment variables
-.env
-.env.*
-!.env.example
-
-*.log
-week-1-public-report.json 
-week-2-public-report.json
-week-3-public-report.json
-# VS Code
-.vscode/
-*.code-workspace
-
-# Mac OS
-.DS_Store
-
-# Node.js (если есть)
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Python
 *.pyc
 *.pyo
 *.pyd
@@ -39,26 +10,90 @@ yarn-error.log*
 *.so
 *.egg
 *.egg-info/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 dist/
 build/
 *.whl
+.venv/
+venv/
+env/
+ENV/
 
-# Java (если есть)
+# ============================================================
+# .NET / C#
+# ============================================================
+**/bin/
+**/obj/
+.vs/
+*.user
+
+# ============================================================
+# Java / Gradle / Maven (на случай, если появится)
+# ============================================================
 *.class
 *.jar
 *.war
 *.ear
 target/
-
-# Gradle
 .gradle/
-build/
 !gradle/wrapper/gradle-wrapper.jar
-
-# Maven
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
 pom.xml.next
 release.properties
-dependency-reduced-pom.xml..env
+dependency-reduced-pom.xml
+
+# ============================================================
+# Node.js (на случай, если появится)
+# ============================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ============================================================
+# IDE / редакторы
+# ============================================================
+.idea/
+.vscode/
+*.code-workspace
+
+# ============================================================
+# ОС
+# ============================================================
+.DS_Store
+Thumbs.db
+
+# ============================================================
+# Логи и временные файлы
+# ============================================================
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# ============================================================
+# Секреты и переменные окружения
+# ============================================================
+.env
+.env.*
+.env.local
+.env.*.local
+.envrc
+!.env.example
+
+# ============================================================
+# Отчёты публичных проверок (все недели)
+# ============================================================
+week-*-public-report.json
+
+# ============================================================
+# Docker override (если появится)
+# ============================================================
+docker-compose.override.yml
+compose.override.yaml

@@ -11,8 +11,11 @@ from .models import OutboxClaim
 class DatabaseClient:
     """Асинхронный клиент для PostgreSQL с least-privilege доступом."""
     
-    def __init__(self, config: DatabaseConfig):
+    def __init__(self, config: DatabaseConfig, server_settings: Optional[Dict[str, str]] = None):
         self._config = config
+        # Параметры сессии (GUC), например course.outbox_lease_ms — их читают
+        # SQL-функции через current_setting(); сигнатуры функций не меняются.
+        self._server_settings = server_settings or {}
         self._pool: Optional[asyncpg.Pool] = None
     
     async def connect(self) -> None:
@@ -21,7 +24,8 @@ class DatabaseClient:
             self._config.dsn,
             min_size=1,
             max_size=5,
-            command_timeout=10
+            command_timeout=10,
+            server_settings=self._server_settings or None
         )
     
     async def close(self) -> None:

@@ -14,6 +14,7 @@ RUN dotnet publish "Workflow.Worker.csproj" -c Release -o /app/publish /p:UseApp
 
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS final
 WORKDIR /app
+EXPOSE 8080
 
 # Npgsql на Linux при установлении соединения пытается динамически
 # подгрузить libgssapi_krb5.so.2 для GSSAPI-негоциации. Без неё это

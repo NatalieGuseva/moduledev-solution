@@ -45,17 +45,17 @@ async def _run_with_graceful_shutdown(component, start_coro) -> None:
 
 
 async def run_dispatcher() -> None:
-    profile = RuntimeProfile.from_env(default_instance_id="outbox-dispatcher", default_health_port=8090)
+    profile = RuntimeProfile.from_env(default_instance_id="outbox-dispatcher", default_health_port=8080)
     db_config = DatabaseConfig.from_env("COURSE_OUTBOX")
     provider_config = ProviderConfig.from_env(test_profile=profile.test_profile)
     dispatcher_config = DispatcherConfig.from_env(test_profile=profile.test_profile)
 
-    dispatcher = OutboxDispatcher(db_config, provider_config, dispatcher_config, profile)
+    dispatcher = OutboxDispatcher(db_config, dispatcher_config, provider_config, profile)
     await _run_with_graceful_shutdown(dispatcher, dispatcher.start())
 
 
 async def run_reconciler() -> None:
-    profile = RuntimeProfile.from_env(default_instance_id="inbox-reconciler", default_health_port=8091)
+    profile = RuntimeProfile.from_env(default_instance_id="inbox-reconciler", default_health_port=8080)
     db_config = DatabaseConfig.from_env("COURSE_INBOX")
     reconciler_config = ReconcilerConfig.from_env(test_profile=profile.test_profile)
 

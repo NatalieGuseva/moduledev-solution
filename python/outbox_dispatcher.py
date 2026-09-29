@@ -7,7 +7,7 @@ from uuid import UUID
 
 from .config import DatabaseConfig, DispatcherConfig, ProviderConfig, RuntimeProfile
 from .db import DatabaseClient
-from .provider_client import ProviderClient
+from .provider_client import ProviderClient, ProviderResponse
 from .observability import Failpoint, HealthServer, log_event
 
 logger = logging.getLogger(__name__)
@@ -32,16 +32,24 @@ class OutboxDispatcher:
     def __init__(
         self,
         db_config: DatabaseConfig,
-        provider_config: ProviderConfig,
         dispatcher_config: DispatcherConfig,
-        profile: RuntimeProfile,
+        provider_config: ProviderConfig,
+        profile: Optional[RuntimeProfile] = None,
     ):
-        self._db = DatabaseClient(db_config)
+        # Порядок аргументов сохранён как в неделе 3 (db, dispatcher, provider) —
+        # открытые тесты и внешний код не ломаются; profile необязателен.
+        if profile is None:
+            profile = RuntimeProfile(
+                test_profile=False, failpoint=None,
+                instance_id=dispatcher_config.owner, health_port=8080,
+            )
+        self._db = DatabaseClient(db_config, dispatcher_config.session_settings)
         self._provider = ProviderClient(provider_config)
         self._owner = dispatcher_config.owner
         self._poll_interval = dispatcher_config.poll_interval_seconds
         self._claim_limit = dispatcher_config.claim_limit
         self._running = False
+        self._closed = False
         self._failpoint = Failpoint(profile.test_profile, profile.failpoint, profile.instance_id, logger)
         self._health = HealthServer(self._is_ready, profile.health_port, logger)
 
@@ -59,19 +67,26 @@ class OutboxDispatcher:
 
         log_event(logger, logging.INFO, "dispatcher.started", owner=self._owner)
 
-        while self._running:
-            try:
-                claims = await self._db.claim_outbox(self._owner, self._claim_limit)
-                await self._failpoint.hit("after_outbox_claim")
+        try:
+            while self._running:
+                try:
+                    claims = await self._db.claim_outbox(self._owner, self._claim_limit)
 
-                if claims:
-                    await asyncio.gather(*(self._process_claim(claim) for claim in claims))
-                else:
-                    await asyncio.sleep(self._poll_interval)
+                    if claims:
+                        # after_outbox_claim: claim уже закоммичен, HTTP к provider
+                        # ещё не выполнялся. Точка достигается только когда работа
+                        # реально захвачена — иначе dispatcher замирал бы на первом
+                        # же пустом poll'е, до появления Outbox-строки.
+                        await self._failpoint.hit("after_outbox_claim")
+                        await asyncio.gather(*(self._process_claim(claim) for claim in claims))
+                    else:
+                        await asyncio.sleep(self._poll_interval)
 
-            except Exception as e:
-                log_event(logger, logging.ERROR, "dispatcher.loop_error", error=str(type(e).__name__))
-                await asyncio.sleep(1)
+                except Exception as e:
+                    log_event(logger, logging.ERROR, "dispatcher.loop_error", error=str(type(e).__name__))
+                    await asyncio.sleep(1)
+        finally:
+            await self._shutdown()
 
     async def _process_claim(self, claim) -> None:
         """Обрабатывает одну захваченную запись Outbox."""
@@ -83,12 +98,19 @@ class OutboxDispatcher:
         )
 
         started = time.monotonic()
-        response = await self._provider.send_payment(
-            operation_id=claim.external_request_id,
-            amount=claim.amount,
-            currency=claim.currency,
-            correlation_id=claim.correlation_id
-        )
+        try:
+            response = await self._provider.send_payment(
+                operation_id=claim.external_request_id,
+                amount=claim.amount,
+                currency=claim.currency,
+                correlation_id=claim.correlation_id
+            )
+        except Exception:
+            # Любой непредвиденный сбой транспорта (не только timeout/ClientError,
+            # которые ProviderClient уже превращает в status=0) — это retryable
+            # попытка, а не потерянная строка: без fail_outbox она осталась бы
+            # LEASED до истечения lease.
+            response = ProviderResponse(0, {})
         duration_ms = int((time.monotonic() - started) * 1000)
 
         await self._failpoint.hit("after_provider_response")
@@ -135,10 +157,17 @@ class OutboxDispatcher:
                     nextAttemptDelayMs=(result or {}).get("nextAttemptDelayMs"),
                 )
 
-    async def stop(self) -> None:
-        """Останавливает dispatcher."""
-        self._running = False
+    async def _shutdown(self) -> None:
+        """Идемпотентное освобождение ресурсов (loop завершился сам или вызван stop())."""
+        if self._closed:
+            return
+        self._closed = True
         await self._health.stop()
         await self._provider.close()
         await self._db.close()
         log_event(logger, logging.INFO, "dispatcher.stopped")
+
+    async def stop(self) -> None:
+        """Останавливает dispatcher."""
+        self._running = False
+        await self._shutdown()

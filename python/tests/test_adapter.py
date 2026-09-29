@@ -11,6 +11,22 @@ from python.config import AdapterConfig
 from python.models import ProviderCallback, ReceiptV1
 
 
+def make_request(body, capability="test-capability"):
+    """Мок aiohttp-запроса: тело отдаётся потоково через request.content.iter_chunked,
+    как в реальном адаптере (без Content-Length — chunked-сценарий)."""
+    raw = body if isinstance(body, bytes) else body.encode("utf-8")
+
+    async def iter_chunked(size):
+        for i in range(0, len(raw), size):
+            yield raw[i:i + size]
+
+    request = Mock()
+    request.match_info = {"capability": capability}
+    request.content = Mock()
+    request.content.iter_chunked = iter_chunked
+    return request
+
+
 class TestProviderCallback:
     """Тесты парсинга legacy callback."""
 
@@ -185,12 +201,7 @@ class TestReceiptAdapter:
     @pytest.mark.asyncio
     async def test_adapter_rejects_invalid_json(self, adapter):
         """Невалидный JSON возвращает 400."""
-        request = Mock()
-        request.match_info = {"capability": "test-capability"}
-        request.content_length = 100
-        
-        # Мокаем чтение тела с невалидным JSON
-        request.text = AsyncMock(return_value="invalid json")
+        request = make_request("invalid json")
         
         response = await adapter._handle_callback(request)
         assert response.status == 400
@@ -198,9 +209,7 @@ class TestReceiptAdapter:
     @pytest.mark.asyncio
     async def test_adapter_rejects_large_body(self, adapter, adapter_config):
         """Тело больше лимита возвращает 400."""
-        request = Mock()
-        request.match_info = {"capability": "test-capability"}
-        request.content_length = adapter_config.max_body_size + 1
+        request = make_request(b"x" * (adapter_config.max_body_size + 1))
         
         response = await adapter._handle_callback(request)
         assert response.status == 400
@@ -209,10 +218,6 @@ class TestReceiptAdapter:
     async def test_adapter_successful_callback(self, adapter):
         """Успешная обработка callback."""
         # Подготовка запроса
-        request = Mock()
-        request.match_info = {"capability": "test-capability"}
-        request.content_length = 200
-        
         valid_callback = {
             "providerPaymentId": "provider-123",
             "operationId": "external-123",
@@ -220,15 +225,12 @@ class TestReceiptAdapter:
             "message": "Payment completed",
             "occurredAt": "2026-09-04T12:00:00Z"
         }
-        request.text = AsyncMock(return_value=json.dumps(valid_callback))
+        request = make_request(json.dumps(valid_callback))
         
         # Мокаем отправку в gateway
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.text = AsyncMock(return_value='{"status":"ok","outcome":"RECEIVED"}')
-        mock_response.content_type = "application/json"
+        gateway_result = (200, '{"status":"ok","outcome":"RECEIVED"}')
         
-        with patch.object(adapter, '_send_to_gateway', AsyncMock(return_value=mock_response)):
+        with patch.object(adapter, '_send_to_gateway', AsyncMock(return_value=gateway_result)):
             response = await adapter._handle_callback(request)
             
             assert response.status == 200
@@ -237,10 +239,6 @@ class TestReceiptAdapter:
     @pytest.mark.asyncio
     async def test_adapter_gateway_timeout(self, adapter):
         """Таймаут gateway возвращает 503."""
-        request = Mock()
-        request.match_info = {"capability": "test-capability"}
-        request.content_length = 200
-        
         valid_callback = {
             "providerPaymentId": "provider-123",
             "operationId": "external-123",
@@ -248,7 +246,7 @@ class TestReceiptAdapter:
             "message": "Payment completed",
             "occurredAt": "2026-09-04T12:00:00Z"
         }
-        request.text = AsyncMock(return_value=json.dumps(valid_callback))
+        request = make_request(json.dumps(valid_callback))
         
         # Мокаем ошибку отправки
         with patch.object(adapter, '_send_to_gateway', AsyncMock(side_effect=Exception("Connection timeout"))):
@@ -262,10 +260,6 @@ class TestReceiptAdapter:
     async def test_adapter_validates_callback_schema(self, adapter):
         """Валидация schema callback."""
         # Невалидный callback (отсутствует обязательное поле)
-        request = Mock()
-        request.match_info = {"capability": "test-capability"}
-        request.content_length = 200
-        
         invalid_callback = {
             "providerPaymentId": "provider-123",
             "operationId": "external-123",
@@ -273,7 +267,48 @@ class TestReceiptAdapter:
             "message": "Payment completed",
             "occurredAt": "2026-09-04T12:00:00Z"
         }
-        request.text = AsyncMock(return_value=json.dumps(invalid_callback))
+        request = make_request(json.dumps(invalid_callback))
         
         response = await adapter._handle_callback(request)
         assert response.status == 400
+
+    @pytest.mark.asyncio
+    async def test_adapter_rejects_missing_message(self, adapter):
+        """message обязателен в legacy callback (фидбэк недели 3)."""
+        body = {
+            "providerPaymentId": "provider-123",
+            "operationId": "external-123",
+            "result": "COMPLETED",
+            "occurredAt": "2026-09-04T12:00:00Z",
+        }
+        response = await adapter._handle_callback(make_request(json.dumps(body)))
+        assert response.status == 400
+
+    @pytest.mark.asyncio
+    async def test_adapter_logs_do_not_contain_body_or_signature(self, adapter, caplog):
+        """В логах нет тела квитанции и HMAC-signature (фидбэк недели 3, high)."""
+        import logging
+        marker = "MARKER-SECRET-MESSAGE-0451"
+        callback = {
+            "providerPaymentId": "provider-123",
+            "operationId": "external-123",
+            "result": "COMPLETED",
+            "message": marker,
+            "occurredAt": "2026-09-04T12:00:00Z",
+        }
+        seen = {}
+
+        async def fake_send(receipt, body_bytes, signature):
+            seen["signature"] = signature
+            seen["body"] = body_bytes.decode("utf-8")
+            return 200, '{"status":"ok"}'
+
+        with caplog.at_level(logging.DEBUG):
+            with patch.object(adapter, "_send_to_gateway", fake_send):
+                response = await adapter._handle_callback(make_request(json.dumps(callback)))
+
+        assert response.status == 200
+        logged = "\n".join(str(r.msg) + " " + r.getMessage() for r in caplog.records)
+        assert marker not in logged
+        assert seen["signature"] not in logged
+        assert seen["body"] not in logged

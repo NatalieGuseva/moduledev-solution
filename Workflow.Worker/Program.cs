@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Common.ActionExecution;
 using Dapper;
 using Microsoft.Extensions.Logging;
@@ -56,7 +57,7 @@ healthServer.Start();
 
 using var cts = new CancellationTokenSource();
 
-//Граceful shutdown: SIGTERM (docker stop) и Ctrl+C. Обычную остановку
+// Graceful shutdown: SIGTERM (docker stop) и Ctrl+C. Обычную остановку
 // (без failpoint) должны пережить и claim_jobs, и уже идущий RunAsync —
 // он либо успеет закоммититься, либо откатится и job просто дождётся
 // следующего claim (своего или другого worker'а).
@@ -73,6 +74,45 @@ catch (OperationCanceledException)
 }
 
 logger.LogInformation("stopped instance={InstanceId}", config.InstanceId);
+
+// ---------------------------------------------------------------------------
+// Неделя 4: детерминированные failpoints.
+//
+// Точка активна только при COURSE_TEST_PROFILE=1 и COURSE_FAILPOINT=<name>.
+// Компонент печатает одну JSON-строку в stdout:
+//   {"event":"failpoint.reached","name":"<name>","instanceId":"<id>"}
+// и блокируется до остановки контейнера. recovery-tests.sh находит эту
+// строку через `docker compose logs` и затем делает `docker compose stop`.
+// ---------------------------------------------------------------------------
+void ReachFailpoint(WorkerConfig cfg, string name)
+{
+    if (!cfg.TestProfile) return;
+    if (!string.Equals(cfg.Failpoint, name, StringComparison.Ordinal)) return;
+
+    var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
+    {
+        ["event"] = "failpoint.reached",
+        ["name"] = name,
+        ["instanceId"] = cfg.InstanceId,
+    });
+
+    // Пишем напрямую в stdout, минуя logger — recovery-tests.sh ищет
+    // ровно эту строку как есть, без обёрток вида {"Message": "..."}.
+    Console.WriteLine(payload);
+    Console.Out.Flush();
+
+    // Блокируемся до остановки контейнера. В случае SIGTERM поток
+    // прервётся, и мы просто вернёмся наверх, где сработает graceful
+    // shutdown. Это соответствует ТЗ: failpoint "блокируется до остановки".
+    try
+    {
+        Thread.Sleep(Timeout.Infinite);
+    }
+    catch (ThreadInterruptedException)
+    {
+        // Ожидаемо при остановке.
+    }
+}
 
 async Task RunLoop(CancellationToken cancellationToken)
 {
@@ -98,6 +138,11 @@ async Task RunLoop(CancellationToken cancellationToken)
             await Task.Delay(config.PollIntervalMs, cancellationToken);
             continue;
         }
+
+        // Неделя 4: after_job_claim — после успешного claim, до выполнения
+        // шага. Контейнер будет остановлен checker'ом/recovery-tests.sh,
+        // лизинг истечёт, и job переподхватит другой worker по reclaim.
+        ReachFailpoint(config, "after_job_claim");
 
         foreach (var job in claimed)
         {

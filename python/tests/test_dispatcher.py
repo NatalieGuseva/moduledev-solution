@@ -162,6 +162,9 @@ class TestOutboxDispatcher:
         dispatcher._db.connect = AsyncMock()
         dispatcher._db.close = AsyncMock()
         dispatcher._db.claim_outbox = AsyncMock(return_value=[])
+        # health-сервер в юнит-тесте не должен занимать реальный порт
+        dispatcher._health.start = AsyncMock()
+        dispatcher._health.stop = AsyncMock()
 
         # Запускаем в фоне и останавливаем через 0.1 сек
         dispatcher._running = True
@@ -223,6 +226,62 @@ class TestOutboxDispatcher:
             lease_version=sample_claim.lease_version,
             provider_payment_id="provider-456"
         )
+
+
+    @pytest.mark.asyncio
+    async def test_after_outbox_claim_failpoint_only_fires_after_real_claim(
+        self, db_config, dispatcher_config, provider_config, sample_claim
+    ):
+        """after_outbox_claim не срабатывает на пустом poll'е — только после захвата работы."""
+        from python.config import RuntimeProfile
+        profile = RuntimeProfile(True, "after_outbox_claim", "outbox-dispatcher", 8080)
+        dispatcher = OutboxDispatcher(db_config, dispatcher_config, provider_config, profile)
+        dispatcher._db.connect = AsyncMock()
+        dispatcher._db.close = AsyncMock()
+        dispatcher._health.start = AsyncMock()
+        dispatcher._health.stop = AsyncMock()
+        dispatcher._provider.close = AsyncMock()
+        dispatcher._provider.send_payment = AsyncMock()
+
+        hits = []
+
+        async def fake_hit(name):
+            hits.append(name)
+            dispatcher._running = False  # вместо бесконечной блокировки
+
+        dispatcher._failpoint.hit = fake_hit
+
+        calls = {"n": 0}
+
+        async def claim(owner, limit):
+            calls["n"] += 1
+            return [] if calls["n"] < 3 else [sample_claim]
+
+        dispatcher._db.claim_outbox = claim
+        dispatcher._process_claim = AsyncMock()
+        await asyncio.wait_for(dispatcher.start(), timeout=5)
+
+        assert hits == ["after_outbox_claim"]
+        assert calls["n"] == 3  # два пустых poll'а без failpoint, срабатывание на третьем
+
+    @pytest.mark.asyncio
+    async def test_unexpected_provider_exception_is_retryable(
+        self, db_config, dispatcher_config, provider_config, sample_claim
+    ):
+        """Непредвиденное исключение транспорта -> fail_outbox с retryable кодом."""
+        dispatcher = OutboxDispatcher(db_config, dispatcher_config, provider_config)
+        dispatcher._db.fail_outbox = AsyncMock(return_value={"outboxState": "RETRY_WAIT"})
+        dispatcher._provider.send_payment = AsyncMock(side_effect=OSError("boom"))
+        await dispatcher._process_claim(sample_claim)
+        assert dispatcher._db.fail_outbox.call_args.kwargs["error_code"].endswith(".retryable")
+
+    def test_dispatcher_session_settings_follow_env(self, monkeypatch):
+        """COURSE_OUTBOX_* превращаются в параметры сессии, которые читает SQL."""
+        monkeypatch.setenv("COURSE_OUTBOX_LEASE_MS", "1500")
+        monkeypatch.setenv("COURSE_OUTBOX_MAX_ATTEMPTS", "6")
+        cfg = DispatcherConfig.from_env(test_profile=True)
+        assert cfg.session_settings["course.outbox_lease_ms"] == "1500"
+        assert cfg.session_settings["course.outbox_max_attempts"] == "6"
 
 
 class TestDispatcherProviderClassification:

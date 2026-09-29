@@ -63,7 +63,22 @@ public class ActionsController : ControllerBase
                     return StatusCode(httpStatus, CreateErrorEnvelope(result.ErrorCode!, result.ErrorMessage!, correlationId, result.EffectiveVersion));
                 }
 
+                // Failpoint after_manual_decision: action выполнен и результат провалидирован,
+                // но общая transaction (решение, переход, следующий job, idempotency result)
+                // ещё НЕ закоммичена — остановка контейнера здесь откатывает всё вместе.
+                if (module == "workflow" && actionName == "manual")
+                {
+                    await FailpointGate.HitAsync("after_manual_decision");
+                }
+
                 await transaction.CommitAsync(cancellationToken);
+
+                // Failpoint after_inbox_saved: Inbox, receipt и idempotency result уже durable,
+                // HTTP-ответ ещё не отдан.
+                if (module == "receipt" && actionName == "accept")
+                {
+                    await FailpointGate.HitAsync("after_inbox_saved");
+                }
 
                 // ResponseJson уже содержит валидный конверт { status, outcome, result, meta } —
                 // как для свежего вызова, так и для повтора по Idempotency-Key. Отдаём его как есть,

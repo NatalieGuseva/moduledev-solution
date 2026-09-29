@@ -77,10 +77,11 @@ class ProviderConfig:
     @classmethod
     def from_env(cls, test_profile: bool = False) -> "ProviderConfig":
         url = environ.get("PROVIDER_URL", "http://provider-simulator:8081")
-        # Неделя 4, test profile (07-autocheck-outline.md): timeout 500 ms.
-        # Прод — консервативнее (5s по умолчанию), тоже переопределяемо.
-        default_timeout = 0.5 if test_profile else 5.0
-        timeout_seconds = float(environ.get("PROVIDER_TIMEOUT_SECONDS", default_timeout))
+        # docs/configuration.md: COURSE_PROVIDER_TIMEOUT_MS в миллисекундах,
+        # 500 в test profile; вне test profile — 5000.
+        default_timeout_ms = 500 if test_profile else 5000
+        timeout_ms = int(environ.get("COURSE_PROVIDER_TIMEOUT_MS", default_timeout_ms))
+        timeout_seconds = timeout_ms / 1000.0
         return cls(url=url, timeout_seconds=timeout_seconds)
 
 
@@ -130,18 +131,46 @@ class DispatcherConfig:
     """Конфигурация outbox-dispatcher.
 
     owner без default идёт первым, остальные — со значениями после него.
+    lease/retry-параметры PostgreSQL-функции читают из параметров сессии
+    (см. session_settings и миграцию 021): сигнатуры claim_outbox/fail_outbox
+    не меняются, а COURSE_OUTBOX_* реально влияют на поведение.
     """
     owner: str
     poll_interval_seconds: float = 0.5
     claim_limit: int = 10
+    lease_ms: int = 30000
+    max_attempts: int = 4
+    backoff_base_ms: int = 200
+    backoff_max_ms: int = 800
+    jitter_max_ms: int = 100
 
     @classmethod
     def from_env(cls, test_profile: bool = False) -> "DispatcherConfig":
         owner = environ.get("OUTBOX_OWNER", "outbox-dispatcher")
-        default_poll = 0.2 if test_profile else 0.5
-        poll_interval_seconds = float(environ.get("OUTBOX_POLL_INTERVAL_SECONDS", default_poll))
+        # COURSE_OUTBOX_POLL_MS: 100 в test profile (docs/configuration.md).
+        poll_ms = int(environ.get("COURSE_OUTBOX_POLL_MS", 100 if test_profile else 500))
         claim_limit = int(environ.get("OUTBOX_CLAIM_LIMIT", 10))
-        return cls(owner=owner, poll_interval_seconds=poll_interval_seconds, claim_limit=claim_limit)
+        return cls(
+            owner=owner,
+            poll_interval_seconds=poll_ms / 1000.0,
+            claim_limit=claim_limit,
+            lease_ms=int(environ.get("COURSE_OUTBOX_LEASE_MS", 2000 if test_profile else 30000)),
+            max_attempts=int(environ.get("COURSE_OUTBOX_MAX_ATTEMPTS", 4)),
+            backoff_base_ms=int(environ.get("COURSE_OUTBOX_BACKOFF_BASE_MS", 200)),
+            backoff_max_ms=int(environ.get("COURSE_OUTBOX_BACKOFF_MAX_MS", 800)),
+            jitter_max_ms=int(environ.get("COURSE_OUTBOX_JITTER_MAX_MS", 100)),
+        )
+
+    @property
+    def session_settings(self) -> dict:
+        """Параметры сессии PostgreSQL (GUC), которые читают claim_outbox/fail_outbox."""
+        return {
+            "course.outbox_lease_ms": str(self.lease_ms),
+            "course.outbox_max_attempts": str(self.max_attempts),
+            "course.outbox_backoff_base_ms": str(self.backoff_base_ms),
+            "course.outbox_backoff_max_ms": str(self.backoff_max_ms),
+            "course.outbox_jitter_max_ms": str(self.jitter_max_ms),
+        }
 
 
 @dataclass(frozen=True)
@@ -156,7 +185,7 @@ class ReconcilerConfig:
 
     @classmethod
     def from_env(cls, test_profile: bool = False) -> "ReconcilerConfig":
-        default_poll = 0.2 if test_profile else 0.5
-        poll_interval_seconds = float(environ.get("INBOX_POLL_INTERVAL_SECONDS", default_poll))
+        # COURSE_INBOX_POLL_MS: 500 (docs/configuration.md).
+        poll_interval_seconds = int(environ.get("COURSE_INBOX_POLL_MS", 500)) / 1000.0
         batch_limit = int(environ.get("INBOX_BATCH_LIMIT", 100))
         return cls(poll_interval_seconds=poll_interval_seconds, batch_limit=batch_limit)

@@ -14,6 +14,8 @@ COPY contracts/ ./contracts/
 RUN adduser --system --group --no-create-home appuser
 USER appuser
 
+EXPOSE 8080 8082
+
 # Точка входа
 ENTRYPOINT ["python", "-m", "python"]
 CMD ["dispatcher"]

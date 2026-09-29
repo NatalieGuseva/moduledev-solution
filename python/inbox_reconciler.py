@@ -55,15 +55,11 @@ class InboxReconciler:
             try:
                 count = await self._db.reconcile_inbox(self._batch_limit)
 
-                # after_inbox_saved: точка ПОСЛЕ того, как delivery.reconcile_inbox
-                # уже применил batch (запись Inbox durable), но ДО того, как этот
-                # процесс продолжит жить дальше — по семантике задания это
-                # "запись Inbox сохранена, reconciler ещё не подтвердил её другим
-                # потребителям" (после restart другой инстанс reconciler'а
-                # применяет тот же сигнал идемпотентно).
+                # FIX: failpoint after_inbox_saved принадлежит компоненту api
+                # (docs/07-autocheck-outline.md), а не reconciler'у — reconciler
+                # здесь только применяет уже сохранённый Inbox.
                 if count > 0:
                     log_event(logger, logging.INFO, "inbox.reconciled", appliedCount=count)
-                    await self._failpoint.hit("after_inbox_saved")
 
                 await asyncio.sleep(self._poll_interval)
 
