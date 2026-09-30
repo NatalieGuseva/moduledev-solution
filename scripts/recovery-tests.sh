@@ -531,6 +531,7 @@ for fp in "${FAILPOINTS[@]}"; do
 
   # Активируем failpoint и перезапускаем ТОЛЬКО целевую реплику
   # (для after_inbox_saved это уже сделано выше, до создания операции).
+  
   if ! activates_before_create "$fp"; then
     export COURSE_FAILPOINT="$fp"
     if is_processing_failpoint "$fp"; then
@@ -538,6 +539,43 @@ for fp in "${FAILPOINTS[@]}"; do
     else
       docker compose stop "$SERVICE" </dev/null >/dev/null
       docker compose up -d --no-build "$SERVICE" </dev/null >/dev/null
+    fi
+
+  # После перезапуска api gateway уже может быть доступен,
+  # но сам api ещё может не слушать порт 8080.
+  wait_ready
+  fi
+
+  # Для after_manual_decision failpoint срабатывает внутри запроса
+  # /api/workflow/manual, поэтому запрос нужно отправить после запуска
+  # api с COURSE_FAILPOINT, но до ожидания failpoint.reached.
+  if [[ "$fp" == "after_manual_decision" ]]; then
+    IDEMPOTENCY_KEY="recovery-manual-$(date +%s%N)"
+
+    PROCESS_ID=$(psql_query \
+      "SELECT process_id
+         FROM autocheck.operations
+        WHERE operation_id = '${OPERATION_ID}'::uuid")
+
+    MANUAL_RESPONSE=$(curl -sS -w $'\n%{http_code}' \
+      -X POST "${GATEWAY_URL}/api/workflow/manual" \
+      -H "Authorization: Bearer ${REVIEWER_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -H "X-Action-Version: 1" \
+      -H "Idempotency-Key: ${IDEMPOTENCY_KEY}" \
+      -d "{\"processId\":\"${PROCESS_ID}\",\"stepInstanceId\":\"${STEP_ID}\",\"decision\":\"APPROVED\",\"reason\":\"recovery-tests\"}")
+
+    MANUAL_STATUS="${MANUAL_RESPONSE##*$'\n'}"
+    MANUAL_BODY="${MANUAL_RESPONSE%$'\n'*}"
+
+    # 504 — это ожидаемый исход: failpoint after_manual_decision
+    # «застревает» внутри обработки запроса, и gateway отдаёт таймаут.
+    # Это признак того, что failpoint сработал, а не ошибка.
+    if [[ "$MANUAL_STATUS" != "200" && "$MANUAL_STATUS" != "201" \
+       && "$MANUAL_STATUS" != "202" && "$MANUAL_STATUS" != "504" ]]; then
+      echo "manual decision request failed: HTTP ${MANUAL_STATUS}" >&2
+      echo "$MANUAL_BODY" >&2
+      exit 1
     fi
   fi
 
@@ -561,17 +599,6 @@ for fp in "${FAILPOINTS[@]}"; do
       echo "hint: failpoint after_inbox_saved is reached only when provider callback is accepted by api (receipt.accept); HTTP 401 above means the callback is rejected before that" >&2
     fi
     exit 1
-  fi
-
-  if [[ "$fp" == "after_manual_decision" ]]; then
-    IDEMPOTENCY_KEY="recovery-manual-$(date +%s%N)"
-    curl -sS -X POST "${GATEWAY_URL}/api/workflow/manual" \
-      -H "Authorization: Bearer ${REVIEWER_TOKEN}" \
-      -H "Content-Type: application/json" \
-      -H "X-Action-Version: 1" \
-      -H "Idempotency-Key: ${IDEMPOTENCY_KEY}" \
-      -d "{\"processId\":\"$(psql_query "SELECT process_id FROM autocheck.operations WHERE operation_id = '${OPERATION_ID}'::uuid")\",\"stepInstanceId\":\"${STEP_ID}\",\"decision\":\"APPROVED\",\"reason\":\"recovery-tests\"}" \
-      >/dev/null || true
   fi
 
   # Останавливаем сервис, убираем failpoint, поднимаем весь стек.
@@ -666,9 +693,23 @@ for fp in "${FAILPOINTS[@]}"; do
       fi
       ;;
     after_manual_decision)
+      # Согласно 05-week-4.md, failpoint after_manual_decision достигается
+      # ВНУТРИ незавершённой транзакции. Остановка api здесь обязана
+      # привести к rollback: решение, переход и следующий job не должны
+      # сохраниться. Проверяем именно это.
+      sleep "${RECOVERY_SETTLE_SECONDS:-10}"
+
       DECISIONS=$(psql_query "SELECT count(*) FROM autocheck.decisions WHERE process_id = (SELECT process_id FROM autocheck.operations WHERE operation_id = '${OPERATION_ID}'::uuid)")
-      if [[ "$DECISIONS" != "1" ]]; then
-        echo "expected exactly one manual decision after ${fp}, got ${DECISIONS}" >&2
+      if [[ "$DECISIONS" != "0" ]]; then
+        echo "expected zero manual decisions after ${fp} (failpoint is inside uncommitted transaction), got ${DECISIONS}" >&2
+        exit 1
+      fi
+
+      # Процесс не должен перейти в COMPLETED/FAILED — он остаётся
+      # в WAITING_MANUAL, потому что решение не было закоммичено.
+      PROCESS_STATE=$(psql_query "SELECT state FROM autocheck.processes WHERE process_id = (SELECT process_id FROM autocheck.operations WHERE operation_id = '${OPERATION_ID}'::uuid)")
+      if [[ "$PROCESS_STATE" != "WAITING_MANUAL" ]]; then
+        echo "expected process state WAITING_MANUAL after ${fp}, got '${PROCESS_STATE}'" >&2
         exit 1
       fi
       ;;
@@ -678,3 +719,5 @@ for fp in "${FAILPOINTS[@]}"; do
 done
 
 echo "recovery tests passed"
+
+    
