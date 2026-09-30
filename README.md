@@ -47,9 +47,10 @@ SQL-функции. Идемпотентность обеспечивается 
 реклеймится, stale completion возвращает `workflow.lease_stale`, `jobId`/`executionId`
 сохраняются, `attemptId` — новый.
 
-Диаграмма: [C4 Container diagram](docs/c4-container.md) (обновлена: добавлены вторые экземпляры).
 
 ```
+Диаграмма: [C4 Container diagram](docs/c4-container.md)
+
 ### Запуск
 
 **Prerequisites:** Docker Engine и Docker Compose v2 с поддержкой `!override`, `!reset`,
@@ -71,19 +72,24 @@ docker ps -a
 
 # Почистить кэш сборки
 docker container prune -f
+```
 docker builder prune -f
+```
 docker system df
+```
 Если Build Cache показывает > 5 GB — снять весь кэш:
 
 ```bash
 docker builder prune -a -f
 
-**Команда запуска:**
-
+```
+# Команда запуска 
 ```
 cp .env.example .env # заполнить значения
+```
 docker compose up -d --build
-docker compose ps # все сервисы healthy; cli — Exited (0)
+```
+docker compose ps      # все сервисы healthy; cli — Exited (0)
 ```
 
 **Что делает **`cli`** при старте.** `cli` — one-shot сервис с entrypoint `Cli/entrypoint.sh`.
@@ -100,7 +106,9 @@ Python-сервисы и `provider-simulator` host-портов не публ�
 
 ```
 curl -fsS http://localhost:8080/health/live # → HTTP 200 {"status":"live"}
+```
 curl -fsS http://localhost:8080/health/ready # → HTTP 200 {"status":"ready"}
+```
 curl -fsS http://localhost:8080/metrics | head # → OpenMetrics
 ```
 
@@ -109,13 +117,9 @@ curl -fsS http://localhost:8080/metrics | head # → OpenMetrics
 `not ready` — копящийся Outbox это штатный режим.
 
 Перед повторным запуском/проверкой:
-
 ```
 docker compose down -v
 ```
-
----
-
 ```
 ### Python-периметр
 
@@ -288,8 +292,11 @@ docker ps -a
 
 # Почистить кэш сборки
 docker container prune -f
+```
 docker builder prune -f
+```
 docker system df
+```
 Если Build Cache показывает > 5 GB — снять весь кэш:
 ```bash
 docker builder prune -a -f
