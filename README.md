@@ -9,35 +9,19 @@ recovery просроченных job и delivery, failpoints, health/OpenMetric
 workflow-движка не переписаны, Python по-прежнему не выбирает flow, лимит, переход
 или финальный статус — все решения остаются в PostgreSQL и C#.
 
-
 command → gateway → api → PostgreSQL (operation + Outbox, одна транзакция)
-                              │
-              outbox-dispatcher ×2 ──HTTP──▶ provider-simulator v0.2.0
-                              ▲                        │ callback
+│
+outbox-dispatcher ×2 ──HTTP──▶ provider-simulator v0.2.0
+▲ │ callback
 PostgreSQL ◀── api ◀── gateway ◀── receipt-adapter ◀───┘
-    │ Inbox
-    └─▶ inbox-reconciler ×2 ─▶ workflow signal ─▶ worker-a / worker-b
+│ Inbox
+└─▶ inbox-reconciler ×2 ─▶ workflow signal ─▶ worker-a / worker-b
 
 ---
 
 ## Решение
 
 ### Архитектура
-
-**Направление вызовов (кто кого вызывает):**
-
-gateway ──HTTP──▶ api ──api.invoke──▶ PostgreSQL (course.*, api.*, payment.*)*
-*worker-a/worker-b ──api.invoke──▶ PostgreSQL (workflow.*, payment.\*)
-outbox-dispatcher / outbox-dispatcher-b
-──delivery.claim_outbox──▶ PostgreSQL
-──HTTP POST /payments──▶ provider-simulator
-provider-simulator ──HTTP legacy callback──▶ receipt-adapter
-receipt-adapter ──HTTP POST /api/receipt/accept──▶ gateway ──▶ api ──▶ PostgreSQL
-inbox-reconciler / inbox-reconciler-b
-──delivery.reconcile_inbox──▶ PostgreSQL
-──workflow\.receive_signal──▶ PostgreSQL (workflow_signal)
-
-
 ```
 `gateway` — единственная внешняя точка входа (host-порт). `api` и `worker-a`/`worker-b` —
 generic C# action runtime и workflow-worker, без host-портов. Python-сервисы не выбирают
@@ -58,15 +42,14 @@ flow, лимит, переход или финальный статус — вс
 Неделя 4 не создаёт новых сервисов, кроме этих двух: те же image, те же роли, те же
 SQL-функции. Идемпотентность обеспечивается `externalRequestId` и provider v0.2.0.
 
-**Неделя 4: два worker с fencing.** `worker-a` и `worker-b` используют одну роль
+Неделя 4: два worker с fencing.** `worker-a` и `worker-b` используют одну роль
 `workflow_worker` и одну функцию `workflow.claim_jobs`. Просроченный lease
 реклеймится, stale completion возвращает `workflow.lease_stale`, `jobId`/`executionId`
 сохраняются, `attemptId` — новый.
 
 Диаграмма: [C4 Container diagram](docs/c4-container.md) (обновлена: добавлены вторые экземпляры).
 
----
-
+```
 ### Запуск
 
 **Prerequisites:** Docker Engine и Docker Compose v2 с поддержкой `!override`, `!reset`,
@@ -74,14 +57,34 @@ SQL-функции. Идемпотентность обеспечивается 
 образ для `outbox-dispatcher(-b)`/`receipt-adapter`/`inbox-reconciler(-b)` — тот же Dockerfile,
 который собирает Compose.
 
-**Команда запуска:**
+**Перед первым запуском — почистить Docker.** Checker поднимает свой изолированный
+Compose project, но Docker daemon общий: разросшийся build cache или оставшиеся
+контейнеры от прошлых попыток приводят к `candidate stack did not start`.
 
 ```bash
-cp .env.example .env      # заполнить значения
-docker compose up -d --build
-docker compose ps         # все сервисы healthy; cli — Exited (0)
 ```
+# Остановить любые локальные стеки
+docker compose down -v --remove-orphans 2>/dev/null || true
 
+# Убедиться, что нет контейнеров от прошлых тестов
+docker ps -a
+
+# Почистить кэш сборки
+docker container prune -f
+docker builder prune -f
+docker system df
+Если Build Cache показывает > 5 GB — снять весь кэш:
+
+```bash
+docker builder prune -a -f
+
+**Команда запуска:**
+
+```
+cp .env.example .env # заполнить значения
+docker compose up -d --build
+docker compose ps # все сервисы healthy; cli — Exited (0)
+```
 
 **Что делает **`cli`** при старте.** `cli` — one-shot сервис с entrypoint `Cli/entrypoint.sh`.
 Он применяет миграции (`migration apply /app/Migrations/ChecksummedMigrations`) и
@@ -95,13 +98,11 @@ docker compose ps         # все сервисы healthy; cli — Exited (0)
 `gateway` — единственный сервис, публикующий host-порт (по умолчанию `127.0.0.1:8080`).
 Python-сервисы и `provider-simulator` host-портов не публикуют.
 
-
 ```
-curl -fsS http://localhost:8080/health/live    # → HTTP 200 {"status":"live"}
-curl -fsS http://localhost:8080/health/ready   # → HTTP 200 {"status":"ready"}
-curl -fsS http://localhost:8080/metrics        # → OpenMetrics
+curl -fsS http://localhost:8080/health/live # → HTTP 200 {"status":"live"}
+curl -fsS http://localhost:8080/health/ready # → HTTP 200 {"status":"ready"}
+curl -fsS http://localhost:8080/metrics | head # → OpenMetrics
 ```
-
 
 `ready = 200` означает, что `postgres`, `api`, `cli`, `gateway` готовы, а миграции
 и обе flow-карты применены. Недоступность provider **не** делает API/worker/dispatcher
@@ -109,14 +110,13 @@ curl -fsS http://localhost:8080/metrics        # → OpenMetrics
 
 Перед повторным запуском/проверкой:
 
-
 ```
 docker compose down -v
 ```
 
-
 ---
 
+```
 ### Python-периметр
 
 SQL-контракт, которым Python обязан пользоваться (никакого прямого DML по
@@ -142,10 +142,10 @@ Retry сохраняет key/body/correlation между попытками — 
 - Запрос dispatcher → provider: `{"operationId": "<externalRequestId>", "amount": "1000.00", "currency": "RUB"}`, `Idempotency-Key = externalRequestId`.
 - Callback provider → adapter (legacy v0.2.0, без токена и без HMAC): `{"providerPaymentId", "operationId", "result", "message", "occurredAt"}`, приходит на `receipt-adapter:8082/callbacks/provider-v02/<PROVIDER_CALLBACK_CAPABILITY>`.
 - Receipt v1, который adapter кладёт в тело `POST /api/receipt/accept` через `gateway`:
-  `{"externalRequestId", "messageId", "occurredAt", "outcome", "providerPaymentId", "version": 1}`,
-  сериализован compact JSON с sorted keys, подписан `HMAC-SHA256` над точными UTF-8 байтами тела,
-  передаётся как `X-Provider-Signature: v1=<lowercase hex>` вместе с JWT,
-  `Idempotency-Key = messageId` и `X-Action-Version: 1`.
+`{"externalRequestId", "messageId", "occurredAt", "outcome", "providerPaymentId", "version": 1}`,
+сериализован compact JSON с sorted keys, подписан `HMAC-SHA256` над точными UTF-8 байтами тела,
+передаётся как `X-Provider-Signature: v1=<lowercase hex>` вместе с JWT,
+`Idempotency-Key = messageId` и `X-Action-Version: 1`.
 
 Проверку подписи выполняет generic C# boundary (`ProviderSignatureMiddleware`) до входа
 в target action. `provider-simulator` закреплён по digest
@@ -161,7 +161,6 @@ Retry сохраняет key/body/correlation между попытками — 
 - `PAYMENT_EXECUTION` → `payment-processing`
 - `PAYMENT_APPROVAL` → `payment-review`
 
-
 ```
 payment-processing:
   validate -> prepare_external -> wait_receipt -> apply_receipt
@@ -175,7 +174,6 @@ payment-review:
          -> APPROVED: approve -> end
          -> REJECTED: reject -> end
 ```
-
 
 Правило `course-limit-v1`: суммы до `100000.00 RUB` включительно — auto approve
 (`WITHIN_LIMIT`), выше — `REVIEW_REQUIRED` (шаг `manual`, закрывается HTTP-завершением
@@ -195,44 +193,6 @@ payment-review:
 `diagnostics.trace`, `diagnostics.stalled`.
 
 ---
-
-### Миграции
-
-**Когда и каким сервисом применяются.** Миграции применяет **только** сервис `cli`
-(entrypoint `Cli/entrypoint.sh`) при каждом `docker compose up -d --build`. Применение
-идемпотентно: уже применённые файлы (с совпадающим SHA-256 checksum в `course.migration_history`)
-пропускаются.
-
-Порядок применения — лексикографический по имени файла в `Api/Migrations/ChecksummedMigrations/`;
-каждая миграция выполняется в **своей транзакции**. Недели 1–3 добавляют:
-
-| **Файл**                                             | **Содержимое**                                                                      |
-| :--------------------------------------------------- | :---------------------------------------------------------------------------------- |
-| `001_initial.sql` … `009_insert_workflow_action.sql` | Недели 1–2: схемы, функции, actions, workflow                                       |
-| `010_delivery_schema.sql`                            | Схема `delivery`: Outbox/Inbox таблицы, роли `outbox_dispatcher`/`inbox_reconciler` |
-| `011_delivery_functions.sql`                         | `delivery.claim_outbox`, `succeed_outbox`, `fail_outbox`, `reconcile_inbox`         |
-| `012_payment_domain.sql`                             | Предметная схема `payment`: операции, decision, лимиты                              |
-| `013_insert_payment_actions.sql`                     | Регистрация обязательных `payment.*`/`receipt.accept`/`workflow.manual` actions     |
-| `014_publisher_grants.sql`                           | Права публикации/активации новых payment-карт для `course_publisher`                |
-| `015_autocheck_receipts_decisions.sql`               | Views `autocheck.receipts` и `autocheck.decisions`                                  |
-| `016_revoke_execute_public_v2.sql`                   | Отзыв `EXECUTE FROM PUBLIC` с точечным re-grant                                     |
-
-Неделя 4 добавляет:
-
-| **Файл**                              | **Содержимое**                                                                                    |
-| :------------------------------------ | :------------------------------------------------------------------------------------------------ |
-| `017_reliability_and_diagnostics.sql` | `diagnostics.trace` и `diagnostics.stalled`, append-only гарантии, delivery/job lease constraints |
-| `018_insert_diagnostics_actions.sql`  | Регистрация `diagnostics.trace` и `diagnostics.stalled` в `course.action_catalog`                 |
-| `019_grant_autocheck_reader.sql`      | `GRANT SELECT` на views `autocheck.*` роли `autocheck_reader`                                     |
-| `020_fix_outbox_view.sql`             | Исправление `autocheck.outbox` — `dead_at` как `timestamp with time zone`                         |
-| `021_outbox_policy_from_session_settings.sql` | Lease и retry-политика Outbox читаются из session settings (`course.outbox_lease_ms`, `course.outbox_max_attempts`, `course.outbox_backoff_base_ms`, `course.outbox_backoff_max_ms`, `course.outbox_jitter_max_ms`); сигнатуры `delivery.claim_outbox` / `delivery.fail_outbox` не меняются |
-
-Ручной запуск:
-
-
-```
-docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigrations
-```
 
 ---
 
@@ -278,76 +238,69 @@ docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigration
 `inbox-reconciler(-b)` — `8080`; `receipt-adapter` — `8082`.
 
 ---
+
+### Миграции
+
+**Когда и каким сервисом применяются.** Миграции применяет **только** сервис `cli`
+(entrypoint `Cli/entrypoint.sh`) при каждом `docker compose up -d --build`. Применение
+идемпотентно: уже применённые файлы (с совпадающим SHA-256 checksum в `course.migration_history`)
+пропускаются.
+
+Порядок применения — лексикографический по имени файла в `Api/Migrations/ChecksummedMigrations/`;
+каждая миграция выполняется в **своей транзакции**. Недели 1–3 добавляют:
+
+| **Файл**                                             | **Содержимое**                                                                      |
+| :--------------------------------------------------- | :---------------------------------------------------------------------------------- |
+| `001_initial.sql` … `009_insert_workflow_action.sql` | Недели 1–2: схемы, функции, actions, workflow                                       |
+| `010_delivery_schema.sql`                            | Схема `delivery`: Outbox/Inbox таблицы, роли `outbox_dispatcher`/`inbox_reconciler` |
+| `011_delivery_functions.sql`                         | `delivery.claim_outbox`, `succeed_outbox`, `fail_outbox`, `reconcile_inbox`         |
+| `012_payment_domain.sql`                             | Предметная схема `payment`: операции, decision, лимиты                              |
+| `013_insert_payment_actions.sql`                     | Регистрация обязательных `payment.*`/`receipt.accept`/`workflow.manual` actions     |
+| `014_publisher_grants.sql`                           | Права публикации/активации новых payment-карт для `course_publisher`                |
+| `015_autocheck_receipts_decisions.sql`               | Views `autocheck.receipts` и `autocheck.decisions`                                  |
+| `016_revoke_execute_public_v2.sql`                   | Отзыв `EXECUTE FROM PUBLIC` с точечным re-grant                                     |
+
+Неделя 4 добавляет:
+
+| **Файл**                              | **Содержимое**                                                                                    |
+| :------------------------------------ | :------------------------------------------------------------------------------------------------ |
+| `017_reliability_and_diagnostics.sql` | `diagnostics.trace` и `diagnostics.stalled`, append-only гарантии, delivery/job lease constraints |
+| `018_insert_diagnostics_actions.sql`  | Регистрация `diagnostics.trace` и `diagnostics.stalled` в `course.action_catalog`                 |
+| `019_grant_autocheck_reader.sql`      | `GRANT SELECT` на views `autocheck.*` роли `autocheck_reader`                                     |
+| `020_fix_outbox_view.sql`             | Исправление `autocheck.outbox` — `dead_at` как `timestamp with time zone`                         |
+| `021_outbox_policy_from_session_settings.sql` | Lease и retry-политика Outbox читаются из session settings (`course.outbox_lease_ms`, `course.outbox_max_attempts`, `course.outbox_backoff_base_ms`, `course.outbox_backoff_max_ms`, `course.outbox_jitter_max_ms`); сигнатуры `delivery.claim_outbox` / `delivery.fail_outbox` не меняются |
+
+Ручной запуск:
+
+```
+docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigrations
+```
+
 ### Перед публичной проверкой
 
-Checker запускает **свой изолированный Compose project** со случайным именем
-(`week4-public-XXXX`), своим volume, своей сетью и своими контейнерами. Он не
-использует ни один из твоих существующих ресурсов, но **Docker daemon у вас общий**.
-Если в системе остаётся много мусора или работает второй стек, `up` внутри
-checker'а может упасть с `candidate stack did not start`, даже если само решение
-корректно.
+```bash
+```
+# Остановить любые локальные стеки
+docker compose down -v --remove-orphans 2>/dev/null || true
 
-Перед запуском `check.sh` обязательно:
+# Убедиться, что нет контейнеров от прошлых тестов
+docker ps -a
 
-1. **Останови локальный стек и удали его volume:**
+# Почистить кэш сборки
+docker container prune -f
+docker builder prune -f
+docker system df
+Если Build Cache показывает > 5 GB — снять весь кэш:
+```bash
+docker builder prune -a -f
 
-   ```bash
-   cd ~/projects/week
-   docker compose down -v --remove-orphans
-   ```
-
-2. **Удали отладочные контейнеры, сети и volumes от ручных тестов:**
-
-   ```bash
-   docker ps -a --filter "name=week4-debug" -q | xargs -r docker rm -f
-   docker network ls --filter "name=week4-debug" -q | xargs -r docker network rm
-   docker volume ls --filter "name=week4-debug" -q | xargs -r docker volume rm
-   ```
-
-3. **Убедись, что Docker daemon не забит build cache.** В нашем случае именно
-   разросшийся до ~10 GB build cache приводил к падению `up` внутри checker'а.
-   Минимальная очистка:
-
-   ```bash
-   docker container prune -f
-   docker builder prune -f
-   docker system df
-   ```
-
-   Если `Build Cache` показывает больше 5 GB, а `Reclaimable` — больше 3 GB,
-   снимай весь кэш:
-
-   ```bash
-   docker builder prune -a -f
-   ```
-
-   Это не сломает решение: следующий `docker compose build` просто соберёт
-   образы заново.
-
-4. **Проверь, что никакие `week-*` и `week4-*` контейнеры не работают:**
-
-   ```bash
-   docker ps -a
-   ```
-
-   В списке не должно быть контейнеров с именами `week-…`, `week4-public-…`
-   или `week4-debug-…`.
-
-5. **Проверь свободный порт 8080 на loopback** (checker выбирает случайный
-   loopback-порт, но конфликтов быть не должно):
-
-   ```bash
-   ss -ltnp | grep -E ':8080|:18080' || true
-   ```
-
-На слабых машинах (4 GB RAM, 2 CPU) имеет смысл также поднять ресурсы
-Docker Desktop: **Settings → Resources** → Memory ≥ 6 GB, CPUs ≥ 4.
-
+```
 ### Проверка
 
 Репозиторий задания (checker) и репозиторий решения — разные репозитории; `check.sh`
 предыдущих недель не перезаписывается и не копируется поверх.
 
+```
 ```
 # Публичная проверка недели 4
 ./moduledev-week-4-reliability-task/check.sh --repo /path/to/solution
@@ -384,7 +337,8 @@ inbox-reconciler inbox-reconciler-b provider-simulator
 
 ---
 
-### Собственные тесты
+```
+## Собственные тесты
 
 Python-периметр покрыт `pytest` (без Docker, юнит- и интеграционные тесты в `python/tests/`):
 
@@ -403,7 +357,6 @@ C#-тесты (`Api.Tests`, `Cli.Tests`):
 
 Запуск:
 
-
 ```
 source .venv/bin/activate
 python -m pytest python/tests -v
@@ -411,62 +364,108 @@ dotnet test Api.Tests
 dotnet test Cli.Tests
 ```
 
+## Запуск аварийных тестов
 
-**Аварийные тесты** (`scripts/recovery-tests.sh`) гоняют все шесть failpoints:
+Скрипт `scripts/recovery-tests.sh` проверяет восстановление после сбоя в каждой из шести точек failpoint: `after_job_claim`, `after_action_before_finish`, `after_outbox_claim`, `after_provider_response`, `after_inbox_saved`, `after_manual_decision`.
 
+Для каждой точки скрипт поднимает стенд с нуля, создаёт операцию, останавливает нужный компонент в точке failpoint, перезапускает стек без failpoint и проверяет инварианты в БД и у провайдера.
+
+> **Внимание.** Скрипт выполняет `docker compose down -v`: перед каждой точкой и при выходе удаляются контейнеры и тома стенда, включая данные PostgreSQL. Не запускайте его на стенде, данные которого нужны.
+
+## Требования
+
+- Linux или WSL с bash 4+, Docker Compose v2, `curl`, `jq`, `python3` на хосте.
+- Свободный порт `COURSE_GATEWAY_PORT` (по умолчанию `8080`) на `127.0.0.1`.
+- Файл `.env` в корне репозитория. Шаблон: `.env.example`; сам `.env` не коммитится. Скрипт подгружает его автоматически и не стартует без переменных `COURSE_JWT_SIGNING_KEY`, `COURSE_POSTGRES_PASSWORD`, `COURSE_MIGRATOR_PASSWORD`, `COURSE_PUBLISHER_PASSWORD`, `COURSE_RUNTIME_PASSWORD`, `COURSE_WORKER_PASSWORD`, `COURSE_OUTBOX_PASSWORD`, `COURSE_INBOX_PASSWORD`, `COURSE_AUTOCHECK_PASSWORD`, `PROVIDER_HMAC_SECRET`, `PROVIDER_CALLBACK_CAPABILITY`, `PROVIDER_CALLBACK_TOKEN`, `PROVIDER_AUDIT_TOKEN`.
+
+## Подготовка `.env`
+
+1. Скопируйте шаблон и замените все значения `REPLACE_WITH_...`:
+
+```bash
+   cp .env.example .env
+```
+
+2. `PROVIDER_CALLBACK_TOKEN` должен быть **JWT** с principal `receipt-provider` и scope `receipt:write`: `receipt-adapter` отправляет его в `Authorization` при вызове `receipt.accept`. Заглушка из шаблона даёт `401` на callback, и точка `after_inbox_saved` не будет достигнута. Выпустите токен и запишите его в `.env`:
+
+```bash
+   set -a; source .env; set +a
+   TOKEN=$(python3 scripts/issue_token.py --sub receipt-provider --consumer provider --scope receipt:write --ttl 2592000)
+   sed -i "s|^PROVIDER_CALLBACK_TOKEN=.*|PROVIDER_CALLBACK_TOKEN=${TOKEN}|" .env
+```
+
+Токен живёт 30 суток (`--ttl 2592000`), после этого его нужно выпустить заново. Скрипт проверяет токен при старте: заглушка, не-JWT или просроченный токен дают сообщение с командой выпуска и код возврата `2`.
+
+## Запуск
+
+Из корня репозитория:
+
+```bash
+chmod +x scripts/recovery-tests.sh   # один раз
+./scripts/recovery-tests.sh          # все точки по очереди
+```
+
+Каждая точка поднимает стенд заново, поэтому полный прогон занимает несколько минут. Успех: строка `recovery tests passed` и код возврата `0`. При первой же ошибке скрипт останавливается с ненулевым кодом и печатает в stderr диагностику: `docker compose ps` и хвосты логов диспетчеров, провайдера, `api`, `gateway` и `receipt-adapter`.
+
+Одна точка и отладка:
+
+```bash
+```
+# только одна точка
+ONLY_FAILPOINT=after_provider_response ./scripts/recovery-tests.sh
+
+# оставить стенд поднятым после запуска, чтобы заглянуть в БД и логи
+KEEP_STACK=1 ONLY_FAILPOINT=after_inbox_saved ./scripts/recovery-tests.sh
+docker compose down -v # убрать стенд вручную
+```
+
+Если запуск идёт не из корня репозитория, путь к нему задаёт `REPO_DIR`; по умолчанию это каталог на уровень выше `scripts/`.
 
 ```
-cd ~/projects/week
-docker compose down -v
-./scripts/recovery-tests.sh
-```
+## Переменные скрипта
 
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `ONLY_FAILPOINT` | не задана | Прогнать только указанную точку |
+| `KEEP_STACK` | не задана | Не выполнять `down -v` при выходе, оставить стенд поднятым |
+| `RECOVERY_SETTLE_SECONDS` | `10` | Пауза после восстановления перед повторной проверкой «нет дубля» |
+| `PROVIDER_AUDIT_TIMEOUT` | `30` | Сколько секунд ждать, пока провайдер зафиксирует платёж |
+| `AUDIT_EXEC_SERVICE` | `receipt-adapter` | Контейнер, из которого запрашивается audit провайдера |
+
+Образ `provider-simulator` не содержит shell, `wget` и `curl`, поэтому audit провайдера запрашивается из контейнера с Python (`receipt-adapter`). Если audit недоступен, платежи считаются по логам провайдера (записи `payment accepted` с `replay=false`).
+
+## Что проверяется
+
+| Точка | Компонент | Проверка после восстановления |
+|---|---|---|
+| `after_job_claim` | `worker-a` | Операция не потеряна, внешний запрос ровно один |
+| `after_action_before_finish` | `worker-a` | То же; незавершённая транзакция откатывается |
+| `after_outbox_claim` | `outbox-dispatcher` | То же |
+| `after_provider_response` | `outbox-dispatcher` | Провайдер зафиксировал ровно один платёж, а повторная отправка при восстановлении не создала второй |
+| `after_inbox_saved` | `api` | Ровно одна запись Inbox в состоянии `RECEIVED` или `APPLIED`; повтор callback не создаёт вторую (оба reconciler остановлены до callback) |
+| `after_manual_decision` | `api` | Ровно одно ручное решение, у операции нет внешних запросов |
+
+Границы, на которых срабатывает каждая точка, описаны в таблице failpoint'ов выше.
+
+## Если тест упал
+
+| Сообщение | Что проверить |
+|---|---|
+| `PROVIDER_CALLBACK_TOKEN: ...` | Токен не JWT или просрочен: выпустите заново (см. «Подготовка `.env`») |
+| `failpoint <имя> was not reached` | Компонент не дошёл до точки. Для `after_inbox_saved` смотрите блок `callback chain` в выводе: `401` значит, что `api` отклонил callback (токен), `403` или `signature` — проблема с HMAC-подписью адаптера |
+| `provider paymentCount=... expected 1` | Платёж не зафиксирован или продублирован; см. логи `provider-simulator` и `outbox-dispatcher` |
+| `expected exactly one inbox row` / `unexpected inbox state` | См. `delivery.inbox` и логи `api`, `inbox-reconciler` |
+| `gateway readiness did not become 200` | Стенд не поднялся: `docker compose ps` и логи `api`, `gateway` |
+| `unknown ONLY_FAILPOINT` | Имя точки указано с опечаткой (код возврата `2`) |
+
+```
 
 ---
 
-### Аварийные сценарии
-
-Failpoint включается только при `COURSE_TEST_PROFILE=1` и только для **одного** имени
-в `COURSE_FAILPOINT`. Компонент пишет в stdout одну строку и замирает до остановки:
-
-
 ```
-{"event":"failpoint.reached","name":"after_job_claim","instanceId":"worker-a"}
-```
-
-
-| **Failpoint**                | **Компонент**           | **Что durable к моменту сбоя**     | **После restart**                                                |
-| :--------------------------- | :---------------------- | :--------------------------------- | :--------------------------------------------------------------- |
-| `after_job_claim`            | worker                  | lease job                          | другой worker делает reclaim после expiry, растёт `leaseVersion` |
-| `after_action_before_finish` | worker                  | ничего (транзакция не закоммичена) | rollback и retry, один предметный эффект                         |
-| `after_outbox_claim`         | dispatcher              | delivery lease                     | reclaim после expiry, тот же `externalRequestId`                 |
-| `after_provider_response`    | dispatcher              | эффект у provider возможен         | retry с тем же ключом, второго эффекта нет                       |
-| `after_inbox_saved`          | api (`receipt.accept`)  | Inbox, receipt, idempotency result | повтор callback → `DUPLICATE`, reconciler применяет signal       |
-| `after_manual_decision`      | api (`workflow.manual`) | ничего (транзакция не закоммичена) | повтор создаёт ровно одно decision                               |
-
-Production profile игнорирует failpoints; публичного endpoint для них нет.
-
-**Сценарий «сломай → восстанови → докажи»:**
-
-
-```
-# 1. включить failpoint у одного сервиса (пример: dispatcher)
-COURSE_FAILPOINT=after_provider_response docker compose up -d --force-recreate outbox-dispatcher
-# 2. дождаться ack
-docker compose logs outbox-dispatcher | grep failpoint.reached
-# 3. остановить контейнер и убрать failpoint
-docker compose stop outbox-dispatcher
-COURSE_FAILPOINT= docker compose up -d outbox-dispatcher outbox-dispatcher-b
-# 4. циклы сами подхватывают работу — ручной SQL не нужен
-```
-
-
----
-
 ### Диагностика
 
 **Health и OpenMetrics:**
-
 
 ```
 curl -fsS http://localhost:8080/health/live
@@ -474,14 +473,12 @@ curl -fsS http://localhost:8080/health/ready
 curl -fsS http://localhost:8080/metrics
 ```
 
-
 `api:8080/metrics` публикует как минимум: `workflow_jobs_ready`,
 `workflow_job_oldest_age_seconds`, `workflow_processes_waiting`, `outbox_pending`,
 `outbox_oldest_age_seconds`, `workflow_failures_total`. Остальные `/metrics` тоже
 возвращают валидный OpenMetrics document.
 
 `diagnostics.trace` — вся цепочка фактов по любому из идентификаторов:
-
 
 ```
 export $(grep -v '^#' .env | xargs)
@@ -492,18 +489,14 @@ curl -s -X POST localhost:8080/api/diagnostics/trace \
   -d '{"identifier":"<operationId | processId | jobId | externalRequestId | ...>"}' | jq
 ```
 
-
 `diagnostics.stalled` — операции, где Outbox `DEAD`, а квитанции нет:
-
 
 ```
 curl -s -X POST localhost:8080/api/diagnostics/stalled \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}' | jq
 ```
 
-
 **Логи сервисов:**
-
 
 ```
 docker compose logs outbox-dispatcher outbox-dispatcher-b
@@ -512,9 +505,7 @@ docker compose logs inbox-reconciler inbox-reconciler-b
 docker compose logs api worker-a worker-b gateway cli
 ```
 
-
 **PostgreSQL (read-only views):**
-
 
 ```
 docker compose exec postgres psql -U postgres -d course -c \
@@ -524,7 +515,6 @@ docker compose exec postgres psql -U postgres -d course -c \
 docker compose exec postgres psql -U postgres -d course -c \
   "SELECT * FROM autocheck.decisions ORDER BY created_at DESC LIMIT 5;"
 ```
-
 
 **Типичные сбои:**
 
@@ -569,21 +559,18 @@ docker compose exec postgres psql -U postgres -d course -c \
 - Поддерживается только валюта `RUB` (унаследовано с недели 1).
 - Python-сервисы не имеют host-портов — единственная точка входа снаружи `gateway`.
 - `receipt-adapter` не имеет database credentials — путь до PostgreSQL идёт через
-  `gateway → api → api.invoke`.
+`gateway → api → api.invoke`.
 - Пересоздание Python-сервисов не теряет состояние — источник истины PostgreSQL
-  (Outbox/Inbox/receipts/decisions), процессы Python stateless.
+(Outbox/Inbox/receipts/decisions), процессы Python stateless.
 - Provider-simulator подключается по digest, а не по тегу.
 - Журналы C# (`api`, `worker`) — валидный JSON по строке (`AddJsonConsole`), но имена
-  полей формата Microsoft.Extensions.Logging, а не единая схема с Python. Обе схемы
-  удовлетворяют требованию «одна строка = один JSON».
+полей формата Microsoft.Extensions.Logging, а не единая схема с Python. Обе схемы
+удовлетворяют требованию «одна строка = один JSON».
 - Failpoint в `api` блокирует только текущий запрос; остальные запросы продолжают
-  обслуживаться до остановки контейнера.
+обслуживаться до остановки контейнера.
 
 ADR и разборы:
 
 - [ADR 001: Trust boundary](docs/001-trust-boundary.md)
 - [ADR 002: Технический и предметный результат](docs/002-technical-vs-domain-result.md)
 - [ADR 003: Lease, fencing и at-least-once](docs/003-lease-fencing-at-least-once.md)
-
-
-

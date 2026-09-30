@@ -20,20 +20,16 @@
          (week-1-public-report.json: 503 на payment.request, 500 на
          opencheck.probe — оба не воспроизводились бы никаким мок-тестом). -->
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.1.0" />
-    <!-- FIX (неделя 4, улучшение из фидбэка недели 3): Testcontainers тянет
-         SSH.NET транзитивно (remote-Docker-контекст), версия 2024.1.0 несёт
-         GHSA-mggc-4xg6-vcxf и GHSA-q939-rpr3-3284. Прямой PackageReference с
-         более новой версией побеждает транзитивную по правилу "nearest wins"
-         NuGet — без ожидания апстрим-бампа в самом Testcontainers.
-         Если `dotnet list package --vulnerable` после restore всё ещё
-         показывает эти два advisory, значит апстрим уже поднял минимальную
-         версию выше — тогда эту строку можно удалить. -->
-    <PackageReference Include="SSH.NET" Version="2024.2.0" />
+    <!-- FIX (неделя 4): прямой PackageReference на SSH.NET перебивает
+         транзитивную уязвимую версию из Testcontainers по правилу
+         «nearest wins» NuGet. Подними Version, если advisory всё ещё
+         показывается. -->
+    <PackageReference Include="SSH.NET" Version="2025.0.0" />
   </ItemGroup>
 
-  <!-- Тесты применяют ровно те же .sql-файлы, что и "cli migration apply" в
+  <!-- Тесты применяют ровно те же .sql-файлы, что и «cli migration apply» в
        проде — не копию правил, а сам источник истины. Если кто-то сломает
-       001_initial.sql/005.../008..., тест увидит ту же самую поломку. -->
+       001_initial.sql/005/008, тест увидит ту же самую поломку. -->
   <ItemGroup>
     <None Include="..\Api\Migrations\ChecksummedMigrations\*.sql">
       <Link>Migrations\%(Filename)%(Extension)</Link>

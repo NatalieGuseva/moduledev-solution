@@ -32,6 +32,12 @@ namespace Api.Tests;
 // training", потому что course_owner не владел этой схемой и не имел на неё
 // CREATE. Ниже — тот же набор действий, что в реальном bootstrap-скрипте,
 // плюс сам ApplyMigrationsAsync теперь подключается MigratorConnectionString.
+//
+// FIX (неделя 4, регрессия autocheck_reader): миграция 019_grant_autocheck_reader.sql
+// грантит SELECT роли autocheck_reader, а её не было в тестовом bootstrap —
+// только в production postgres-init/00-bootstrap-roles.sh. Здесь добавлен
+// тот же пункт 9, что и в проде (создание роли + NOSUPERUSER + REVOKE/GRANT),
+// чтобы миграции 019 и последующие не падали с 'role "autocheck_reader" does not exist'.
 public sealed class PostgresFixture : IAsyncLifetime
 {
     private const string MigratorPassword = "test_migrator_pw";
@@ -40,6 +46,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     private const string WorkerPassword = "test_worker_pw";
     private const string OutboxPassword = "test_outbox_pw";
     private const string InboxPassword = "test_inbox_pw";
+    private const string AutocheckPassword = "test_autocheck_pw";
 
     private PostgreSqlContainer _container = null!;
 
@@ -50,6 +57,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     public string WorkerConnectionString { get; private set; } = string.Empty;
     public string OutboxConnectionString { get; private set; } = string.Empty;
     public string InboxConnectionString { get; private set; } = string.Empty;
+    public string AutocheckConnectionString { get; private set; } = string.Empty;
 
     public async Task InitializeAsync()
     {
@@ -69,6 +77,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         WorkerConnectionString = WithCredentials(SuperuserConnectionString, "workflow_worker", WorkerPassword);
         OutboxConnectionString = WithCredentials(SuperuserConnectionString, "outbox_dispatcher", OutboxPassword);
         InboxConnectionString = WithCredentials(SuperuserConnectionString, "inbox_reconciler", InboxPassword);
+        AutocheckConnectionString = WithCredentials(SuperuserConnectionString, "autocheck_reader", AutocheckPassword);
 
         await BootstrapRolesAsync();
         await ApplyMigrationsAsync();
@@ -213,10 +222,42 @@ public sealed class PostgresFixture : IAsyncLifetime
             END
             $do$;
 
-            -- 9. pgcrypto (public) — CREATE EXTENSION ДО REVOKE, иначе REVOKE
-            --    накладывать не на что; затем explicit GRANT back только
-            --    course_owner/course_migrator/course_publisher (Python-ролям —
-            --    намеренно нет, ровно как в проде).
+            -- 9. autocheck_reader — LOGIN-роль checker'а. Read-only доступ
+            --    ТОЛЬКО к views schema autocheck. GRANT'ы на views выдаются
+            --    отдельной миграцией 019 (после того, как views созданы),
+            --    потому что на момент bootstrap схема autocheck ещё не
+            --    существует. Без этой роли миграция 019 падает с
+            --    'role ""autocheck_reader"" does not exist' — именно эта
+            --    регрессия и была в тестовом bootstrap до этого фикса.
+            DO $do$
+            BEGIN
+                IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'autocheck_reader') THEN
+                    CREATE ROLE autocheck_reader WITH LOGIN PASSWORD '" + AutocheckPassword + @"';
+                ELSE
+                    ALTER ROLE autocheck_reader WITH LOGIN PASSWORD '" + AutocheckPassword + @"';
+                END IF;
+            END
+            $do$;
+
+            -- Defence-in-depth: никаких лишних атрибутов, никаких default-прав
+            -- на public. USAGE/SELECT на autocheck.* выдаются миграцией 019.
+            ALTER ROLE autocheck_reader NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;
+            REVOKE ALL ON DATABASE course FROM autocheck_reader;
+            GRANT CONNECT ON DATABASE course TO autocheck_reader;
+            REVOKE ALL ON SCHEMA public FROM autocheck_reader;
+
+            -- TEMP по умолчанию выдан роли PUBLIC на каждую базу. Роль
+            -- autocheck_reader наследует его через PUBLIC, и простое
+            -- REVOKE ALL ... FROM autocheck_reader это НЕ отменяет — нужен
+            -- явный отзыв у PUBLIC. Checker проверяет именно
+            -- has_database_privilege(current_user, current_database(), 'TEMP'),
+            -- который считает эффективную привилегию с учётом PUBLIC.
+            REVOKE TEMP ON DATABASE course FROM PUBLIC;
+
+            -- 10. pgcrypto (public) — CREATE EXTENSION ДО REVOKE, иначе REVOKE
+            --     накладывать не на что; затем explicit GRANT back только
+            --     course_owner/course_migrator/course_publisher (Python-ролям —
+            --     намеренно нет, ровно как в проде).
             CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
             REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
@@ -225,7 +266,7 @@ public sealed class PostgresFixture : IAsyncLifetime
             GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public
                 TO course_owner, course_migrator, course_publisher;
 
-            -- 10. course_migrator должен владеть базой — иначе CREATE SCHEMA/
+            -- 11. course_migrator должен владеть базой — иначе CREATE SCHEMA/
             --     EXTENSION внутри миграций падает на PG15+ (CREATE на базе
             --     разрешён только владельцу и суперпользователю).
             ALTER DATABASE course OWNER TO course_migrator;
