@@ -13,11 +13,12 @@ command → gateway → api → PostgreSQL (operation + Outbox, одна тра�
 │
 outbox-dispatcher ×2 ──HTTP──▶ provider-simulator v0.2.0
 ▲ │ callback
-PostgreSQL ◀── api ◀── gateway ◀── receipt-adapter ◀───┘
+│ ▼
+PostgreSQL ◀── api ◀── gateway ◀── receipt-adapter ◀────────┘
 │ Inbox
 └─▶ inbox-reconciler ×2 ─▶ workflow signal ─▶ worker-a / worker-b
 
----
+text
 
 ## Решение
 
@@ -47,9 +48,9 @@ SQL-функции. Идемпотентность обеспечивается 
 реклеймится, stale completion возвращает `workflow.lease_stale`, `jobId`/`executionId`
 сохраняются, `attemptId` — новый.
 
-
 ```
 Диаграмма: [C4 Container diagram](docs/c4-container.md)
+
 
 ### Запуск
 
@@ -63,34 +64,25 @@ Compose project, но Docker daemon общий: разросшийся build cac
 контейнеры от прошлых попыток приводят к `candidate stack did not start`.
 
 ```bash
-```
-# Остановить любые локальные стеки
+*Остановить любые локальные стеки*
 docker compose down -v --remove-orphans 2>/dev/null || true
-
-# Убедиться, что нет контейнеров от прошлых тестов
+*Убедиться, что нет контейнеров от прошлых тестов*
 docker ps -a
-
-# Почистить кэш сборки
+*Почистить кэш сборки*
 docker container prune -f
-```
-docker builder prune -f
-```
 docker system df
-```
-Если Build Cache показывает > 5 GB — снять весь кэш:
-
+*Если Build Cache показывает > 5 GB — снять весь кэш:*
 ```bash
 docker builder prune -a -f
 
 ```
-# Команда запуска 
-```
+
+#### Команда запуска 
 cp .env.example .env # заполнить значения
-```
+
 docker compose up -d --build
-```
+
 docker compose ps      # все сервисы healthy; cli — Exited (0)
-```
 
 **Что делает **`cli`** при старте.** `cli` — one-shot сервис с entrypoint `Cli/entrypoint.sh`.
 Он применяет миграции (`migration apply /app/Migrations/ChecksummedMigrations`) и
@@ -99,29 +91,29 @@ docker compose ps      # все сервисы healthy; cli — Exited (0)
 `worker-a`, `worker-b`, `outbox-dispatcher(-b)`, `receipt-adapter`,
 `inbox-reconciler(-b)` — через `depends_on: cli: condition: service_completed_successfully`.
 
-**Адрес и ожидаемый результат.**
+
+#### Адрес и ожидаемый результат
 
 `gateway` — единственный сервис, публикующий host-порт (по умолчанию `127.0.0.1:8080`).
 Python-сервисы и `provider-simulator` host-портов не публикуют.
 
-```
 curl -fsS http://localhost:8080/health/live # → HTTP 200 {"status":"live"}
-```
+
 curl -fsS http://localhost:8080/health/ready # → HTTP 200 {"status":"ready"}
-```
+
 curl -fsS http://localhost:8080/metrics | head # → OpenMetrics
-```
+
 
 `ready = 200` означает, что `postgres`, `api`, `cli`, `gateway` готовы, а миграции
 и обе flow-карты применены. Недоступность provider **не** делает API/worker/dispatcher
 `not ready` — копящийся Outbox это штатный режим.
 
-Перед повторным запуском/проверкой:
-```
+*Перед повторным запуском/проверкой*
+
 docker compose down -v
-```
-```
-### Python-периметр
+
+
+#### Python-периметр
 
 SQL-контракт, которым Python обязан пользоваться (никакого прямого DML по
 `delivery`/`payment`/`workflow` таблицам):
@@ -138,7 +130,7 @@ Retry сохраняет key/body/correlation между попытками — 
 
 ---
 
-### Provider
+#### Provider
 
 Один локальный Python-образ, пять entrypoints (`dispatcher`/`adapter`/`reconciler`),
 контракт с provider v0.2.0:
@@ -158,7 +150,7 @@ Retry сохраняет key/body/correlation между попытками — 
 
 ---
 
-### Payment flows
+#### Payment flows
 
 `payment.submit` принимает только `operationId` и `Idempotency-Key`; привязка flow — server-side:
 
@@ -189,7 +181,7 @@ payment-review:
 
 ---
 
-### Обязательные actions
+#### Обязательные actions
 
 `payment.submit`, `operation.events`, `payment.validate`, `payment.prepare_external`,
 `payment.apply_receipt`, `payment.complete`, `payment.reject`, `payment.check_limit`,
@@ -200,7 +192,7 @@ payment-review:
 
 ---
 
-### Конфигурация
+#### Конфигурация
 
 Переменные окружения (реальные значения не хранятся в репозитории; шаблон — `.env.example`):
 
@@ -274,104 +266,71 @@ payment-review:
 | `020_fix_outbox_view.sql`             | Исправление `autocheck.outbox` — `dead_at` как `timestamp with time zone`                         |
 | `021_outbox_policy_from_session_settings.sql` | Lease и retry-политика Outbox читаются из session settings (`course.outbox_lease_ms`, `course.outbox_max_attempts`, `course.outbox_backoff_base_ms`, `course.outbox_backoff_max_ms`, `course.outbox_jitter_max_ms`); сигнатуры `delivery.claim_outbox` / `delivery.fail_outbox` не меняются |
 
-Ручной запуск:
+*Ручной запуск*
 
 ```
 docker compose run --rm cli migration apply /app/Migrations/ChecksummedMigrations
 ```
 
-### Перед публичной проверкой
+#### Перед публичной проверкой
 
-```bash
-```
-# Остановить любые локальные стеки
+*Остановить любые локальные стеки*
+
 docker compose down -v --remove-orphans 2>/dev/null || true
 
-# Убедиться, что нет контейнеров от прошлых тестов
+*Убедиться, что нет контейнеров от прошлых тестов*
+
 docker ps -a
 
-# Почистить кэш сборки
+*Почистить кэш сборки*
+
 docker container prune -f
-```
-docker builder prune -f
 ```
 docker system df
 ```
-Если Build Cache показывает > 5 GB — снять весь кэш:
+*Если Build Cache показывает > 5 GB — снять весь кэш*
 ```bash
 docker builder prune -a -f
 
 ```
+
 ### Проверка
 
 Репозиторий задания (checker) и репозиторий решения — разные репозитории; `check.sh`
 предыдущих недель не перезаписывается и не копируется поверх.
 
-```
-```
-# Публичная проверка недели 4
+#### Публичная проверка недели 4
 ./moduledev-week-4-reliability-task/check.sh --repo /path/to/solution
 
-# Собственные Python-тесты (без Docker)
-python3 -m pytest python/tests -q
-
-# Собственные DB-тесты C# (Testcontainers, нужен Docker)
-dotnet test Api.Tests
-dotnet test Cli.Tests
-
-# Аварийные тесты по всем шести failpoints
-./scripts/recovery-tests.sh
-```
-
-Отчёт публичной проверки (`week-*-public-report.json`) в git не попадает.
-
-**Compose seam, который проверяется:** ровно эти 12 service names должны существовать
-и подниматься по `docker compose up -d --build` без ручного вмешательства:
-
-```
-gateway api cli postgres worker-a worker-b
-outbox-dispatcher outbox-dispatcher-b receipt-adapter
-inbox-reconciler inbox-reconciler-b provider-simulator
-```
-
-`cli` реализован как one-shot; единственный сервис с host-портом — `gateway`;
-`receipt-adapter` не получает PostgreSQL-настроек; оба dispatcher используют
-разные owner'ы, но одну роль `outbox_dispatcher`; оба reconciler используют
-одну роль `inbox_reconciler`.
-
-Коды завершения: `0` — все public checks пройдены, `1` — нарушен контракт решения,
-`2` — checker или окружение не готовы.
-
----
-
-```
-## Собственные тесты
+#### Собственные тесты
 
 Python-периметр покрыт `pytest` (без Docker, юнит- и интеграционные тесты в `python/tests/`):
-
 - `test_hmac.py` — корректность HMAC-подписи над compact JSON с sorted keys;
 - `test_adapter.py` — перевод legacy callback в receipt v1, отклонение wrong capability/invalid JSON/large body/CRLF/unknown fields;
 - `test_dispatcher.py` — claim/succeed/fail цикл dispatcher, классификация ответов provider (retryable/terminal), сохранение idempotency key между retry;
 - `test_integration.py` — сквозной прогон периметра (dispatcher → adapter → receipt v1 → HMAC → duplicate/conflict).
-
 C#-тесты (`Api.Tests`, `Cli.Tests`):
-
 - `DbInvariantsRegressionTests` — DB-инварианты и append-only;
 - `IdempotencyRegressionTests` — атомарный claim до предметного эффекта;
 - `RoleGrantsRegressionTests` — least-privilege роли;
 - `WorkflowReclaimRegressionTests` — два конкурентных claim, expired lease, stale finish;
 - `ManifestSchemaValidatorTests` — валидация manifest Draft 2020-12.
 
-Запуск:
+*Запуск:*
 
-```
+python3 -m venv .venv
+
 source .venv/bin/activate
-python -m pytest python/tests -v
-dotnet test Api.Tests
-dotnet test Cli.Tests
-```
 
-## Запуск аварийных тестов
+pip install pytest pytest-asyncio aiohttp asyncpg
+
+python -m pytest python/tests -v
+
+dotnet test Api.Tests
+
+dotnet test Cli.Tests
+
+#### Аварийных тесты
 
 Скрипт `scripts/recovery-tests.sh` проверяет восстановление после сбоя в каждой из шести точек failpoint: `after_job_claim`, `after_action_before_finish`, `after_outbox_claim`, `after_provider_response`, `after_inbox_saved`, `after_manual_decision`.
 
@@ -379,18 +338,18 @@ dotnet test Cli.Tests
 
 > **Внимание.** Скрипт выполняет `docker compose down -v`: перед каждой точкой и при выходе удаляются контейнеры и тома стенда, включая данные PostgreSQL. Не запускайте его на стенде, данные которого нужны.
 
-## Требования
+*Требования*
 
 - Linux или WSL с bash 4+, Docker Compose v2, `curl`, `jq`, `python3` на хосте.
 - Свободный порт `COURSE_GATEWAY_PORT` (по умолчанию `8080`) на `127.0.0.1`.
 - Файл `.env` в корне репозитория. Шаблон: `.env.example`; сам `.env` не коммитится. Скрипт подгружает его автоматически и не стартует без переменных `COURSE_JWT_SIGNING_KEY`, `COURSE_POSTGRES_PASSWORD`, `COURSE_MIGRATOR_PASSWORD`, `COURSE_PUBLISHER_PASSWORD`, `COURSE_RUNTIME_PASSWORD`, `COURSE_WORKER_PASSWORD`, `COURSE_OUTBOX_PASSWORD`, `COURSE_INBOX_PASSWORD`, `COURSE_AUTOCHECK_PASSWORD`, `PROVIDER_HMAC_SECRET`, `PROVIDER_CALLBACK_CAPABILITY`, `PROVIDER_CALLBACK_TOKEN`, `PROVIDER_AUDIT_TOKEN`.
 
-## Подготовка `.env`
+*Подготовка `.env`*
 
 1. Скопируйте шаблон и замените все значения `REPLACE_WITH_...`:
 
 ```bash
-   cp .env.example .env
+cp .env.example .env
 ```
 
 2. `PROVIDER_CALLBACK_TOKEN` должен быть **JWT** с principal `receipt-provider` и scope `receipt:write`: `receipt-adapter` отправляет его в `Authorization` при вызове `receipt.accept`. Заглушка из шаблона даёт `401` на callback, и точка `after_inbox_saved` не будет достигнута. Выпустите токен и запишите его в `.env`:
@@ -403,7 +362,7 @@ dotnet test Cli.Tests
 
 Токен живёт 30 суток (`--ttl 2592000`), после этого его нужно выпустить заново. Скрипт проверяет токен при старте: заглушка, не-JWT или просроченный токен дают сообщение с командой выпуска и код возврата `2`.
 
-## Запуск
+*Запуск*
 
 Из корня репозитория:
 
@@ -414,22 +373,22 @@ chmod +x scripts/recovery-tests.sh   # один раз
 
 Каждая точка поднимает стенд заново, поэтому полный прогон занимает несколько минут. Успех: строка `recovery tests passed` и код возврата `0`. При первой же ошибке скрипт останавливается с ненулевым кодом и печатает в stderr диагностику: `docker compose ps` и хвосты логов диспетчеров, провайдера, `api`, `gateway` и `receipt-adapter`.
 
-Одна точка и отладка:
+*Одна точка и отладка*
 
 ```bash
-```
 # только одна точка
 ONLY_FAILPOINT=after_provider_response ./scripts/recovery-tests.sh
 
 # оставить стенд поднятым после запуска, чтобы заглянуть в БД и логи
 KEEP_STACK=1 ONLY_FAILPOINT=after_inbox_saved ./scripts/recovery-tests.sh
-docker compose down -v # убрать стенд вручную
+docker compose down -v   # убрать стенд вручную
+
 ```
 
 Если запуск идёт не из корня репозитория, путь к нему задаёт `REPO_DIR`; по умолчанию это каталог на уровень выше `scripts/`.
 
 ```
-## Переменные скрипта
+*Переменные скрипта*
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
@@ -441,7 +400,7 @@ docker compose down -v # убрать стенд вручную
 
 Образ `provider-simulator` не содержит shell, `wget` и `curl`, поэтому audit провайдера запрашивается из контейнера с Python (`receipt-adapter`). Если audit недоступен, платежи считаются по логам провайдера (записи `payment accepted` с `replay=false`).
 
-## Что проверяется
+*Что проверяется*
 
 | Точка | Компонент | Проверка после восстановления |
 |---|---|---|
@@ -450,11 +409,11 @@ docker compose down -v # убрать стенд вручную
 | `after_outbox_claim` | `outbox-dispatcher` | То же |
 | `after_provider_response` | `outbox-dispatcher` | Провайдер зафиксировал ровно один платёж, а повторная отправка при восстановлении не создала второй |
 | `after_inbox_saved` | `api` | Ровно одна запись Inbox в состоянии `RECEIVED` или `APPLIED`; повтор callback не создаёт вторую (оба reconciler остановлены до callback) |
-| `after_manual_decision` | `api` | Ровно одно ручное решение, у операции нет внешних запросов |
+| `after_manual_decision` | `api` | Ноль ручных решений (failpoint внутри незавершённой транзакции → rollback); процесс остаётся в `WAITING_MANUAL`; у операции нет внешних запросов |
 
 Границы, на которых срабатывает каждая точка, описаны в таблице failpoint'ов выше.
 
-## Если тест упал
+*Если тест упал*
 
 | Сообщение | Что проверить |
 |---|---|
@@ -467,9 +426,8 @@ docker compose down -v # убрать стенд вручную
 
 ```
 
----
 
-```
+
 ### Диагностика
 
 **Health и OpenMetrics:**
